@@ -63,26 +63,6 @@ public class PanoramaManager {
         PanoramaManager.lastPanoramaViewer = nil
     }
     
-    /// Moves the panorama rotation to the given X and Y coordinates.
-    ///
-    /// This function can be used with our `SwiftUIGamepad` package to allow a Gamepad attached to the device to rotate the panorama:
-    ///
-    /// ```
-    /// contents()
-    ///.onGamepadLeftThumbstick(viewID: viewID) { xAxis, yAxis in
-    ///     PanoramaManager.moveCamera(xAxis: xAxis, yAxis: yAxis)
-    ///}
-    /// ```
-    /// See: https://github.com/Appracatappra/SwiftUIGamepad for details.
-    ///
-    /// - Parameters:
-    ///   - xAxis: The new X axis location.
-    ///   - yAxis: The new Y axis location.
-    public static func moveCamera(xAxis:Float, yAxis:Float) {
-        let location = CGPoint(x: CGFloat(xAxis * -10.0), y: CGFloat(yAxis * 10.0))
-        PanoramaManager.lastPanoramaViewer?.handlePan(location: location)
-    }
-    
     /// Calculate the leading target point.
     /// - Parameters:
     ///   - point: The center of the target.

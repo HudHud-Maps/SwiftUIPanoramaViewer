@@ -67,7 +67,7 @@ public struct CompassView: UIViewRepresentable {
         view.bgColor = bgColor
         
         // Attach compass to viewer
-        //PanoramaManager.connectCompass(view)
+        PanoramaManager.connectCompass(view)
         
         // Return view
         return view

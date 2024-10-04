@@ -54,8 +54,8 @@ public struct PanoramaViewer: UIViewRepresentable {
     public var backgroundColor:UIColor = .black
     
     /// Handles the view rotating.
-    public var rotationHandler: ((_ rotationKey: Int) -> Void)?
-    
+	public var rotationHandler: ((_ rotationKey: CGFloat) -> Void)?
+
     /// Handles the camera being moved.
     public var cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)?
     
@@ -68,7 +68,7 @@ public struct PanoramaViewer: UIViewRepresentable {
     ///   - backgroundColor: The viewer background color.
     ///   - rotationHandler: Handle the panorama being rotated.
     ///   - cameraMoved: Handles the panorama camera being moved and returns the new Pitch, Yaw and Rotation.
-    public init(image: Binding<UIImage?>, panoramaType: CTPanoramaType = .spherical, controlMethod: CTPanoramaControlMethod = .touch, backgroundColor:UIColor = .black, rotationHandler: ((_ rotationKey: Int) -> Void)? = nil, cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)? = nil) {
+	public init(image: Binding<UIImage?>, panoramaType: CTPanoramaType = .spherical, controlMethod: CTPanoramaControlMethod = .touch, backgroundColor:UIColor = .black, rotationHandler: ((_ rotationKey: CGFloat) -> Void)? = nil, cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)? = nil) {
         self._image = image
         self.panoramaType = panoramaType
         self.controlMethod = controlMethod
@@ -85,11 +85,9 @@ public struct PanoramaViewer: UIViewRepresentable {
         // Create and initialize
         let view = CTPanoramaView()
         view.image = image
-        view.panoramaType = panoramaType
         view.controlMethod = controlMethod
         view.backgroundColor = backgroundColor
         view.rotationHandler = rotationHandler
-        view.cameraMoved = cameraMoved
         
         // Save reference to connect to compass view
         PanoramaManager.lastPanoramaViewer = view
@@ -103,8 +101,8 @@ public struct PanoramaViewer: UIViewRepresentable {
     ///   - uiView: The `PanoramaViewer` that is updating.
     ///   - context: The context that the view is updating in.
     public func updateUIView(_ uiView: UIViewType, context: Context) {
-        if PanoramaManager.shouldUpdateImage {
-            uiView.image = image
+        if PanoramaManager.shouldUpdateImage, let image {
+			uiView.animate(to: image) {}
             PanoramaManager.shouldUpdateImage = false
         }
     }
