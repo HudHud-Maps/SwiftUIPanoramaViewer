@@ -3,7 +3,6 @@
 
 import Foundation
 import SwiftUI
-import SwiftletUtilities
 
 /// `SwiftUIPanoramaViewer` is a helper class for working with `PanoramaViewers`.
 public class SwiftUIPanoramaViewer {

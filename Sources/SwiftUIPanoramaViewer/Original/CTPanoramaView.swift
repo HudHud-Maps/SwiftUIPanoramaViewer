@@ -11,8 +11,7 @@ import UIKit
 import SceneKit
 import ImageIO
 import SwiftUI
-import SwiftletUtilities
-import LogManager
+import OSLog
 
 #if !os(tvOS)
 import CoreMotion
@@ -365,13 +364,13 @@ import CoreMotion
             guard (panoramaView.controlMethod == .motion || panoramaView.controlMethod == .both) else {return}
 
             guard let motionData = motionData else {
-                Log.error(subsystem: "CTPanoramaView", category: "startMotionUpdates", "\(String(describing: error?.localizedDescription))")
+				Logger.panoramaView.error("\(String(describing: error?.localizedDescription))")
                 panoramaView.motionManager.stopDeviceMotionUpdates()
                 return
             }
 
 
-            Execute.onMain {
+			DispatchQueue.main.async {
                 if panoramaView.panoramaType == .cylindrical {
 
                     let rotationMatrix = motionData.attitude.rotationMatrix
@@ -805,8 +804,7 @@ private extension CMDeviceMotion {
         let result: SCNVector4
 
         // From UIApplication.shared.statusBarOrientation
-        switch HardwareInformation.windowOrientation {
-
+		switch UIApplication.windowOrientation {
         case .landscapeRight:
             let cq1 = GLKQuaternionMakeWithAngleAndAxis(.pi/2, 0, 1, 0)
             let cq2 = GLKQuaternionMakeWithAngleAndAxis(-(.pi/2), 1, 0, 0)
@@ -907,4 +905,65 @@ private extension GLKQuaternion {
     }
     
 }
+#endif
+
+#if os(iOS)
+private extension UIApplication {
+	/// Returns the full width of the main screen of the device the app is running on.
+	static var screenWidth:Int {
+		let screenSize: CGRect = UIScreen.main.bounds
+		return Int(screenSize.width)
+	}
+
+	/// Returns the height of the main screen of the device that the app is running on.
+	static var screenHeight:Int {
+		let screenSize: CGRect = UIScreen.main.bounds
+		return Int(screenSize.height)
+	}
+
+	static var windowOrientation: UIInterfaceOrientation {
+
+		// Ensure that we are running on the main thread.
+		guard Thread.isMainThread else {
+			return .unknown
+		}
+
+		// Ensure that a scene has been connected.
+		guard UIApplication.shared.connectedScenes.count > 0 else {
+			return .unknown
+		}
+
+		// Ensure we can get a scene and that it is the foreground scene.
+		guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene, windowScene.activationState == .foregroundActive else {
+			return .unknown
+		}
+
+		// Return the scene's orientation.
+		return windowScene.interfaceOrientation
+	}
+
+	/// Returns the current orientation of the device.
+	static var deviceOrientation: UIDeviceOrientation {
+		switch windowOrientation {
+		case .unknown:
+			// If the orientation is unknown, use the screen height and width to guess at the rotation.
+			if screenWidth > screenHeight {
+				return .landscapeLeft
+			} else {
+				return .portrait
+			}
+		case .portrait:
+			return .portrait
+		case .portraitUpsideDown:
+			return .portraitUpsideDown
+		case .landscapeLeft:
+			return .landscapeLeft
+		case .landscapeRight:
+			return .landscapeRight
+		@unknown default:
+			return .unknown
+		}
+	}
+}
+
 #endif
