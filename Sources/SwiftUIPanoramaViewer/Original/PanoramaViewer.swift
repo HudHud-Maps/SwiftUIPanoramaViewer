@@ -49,7 +49,9 @@ public struct PanoramaViewer: UIViewRepresentable {
     
     /// The type of user interaction that the `PanoramaViewer` supports.
     public var controlMethod: CTPanoramaControlMethod = .touch
-    
+
+	public var startAngle: Float = 0
+
     /// The viewer background color.
     public var backgroundColor:UIColor = .black
     
@@ -58,7 +60,9 @@ public struct PanoramaViewer: UIViewRepresentable {
 
     /// Handles the camera being moved.
     public var cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)?
-    
+
+	public var tapHandler: ((CTNavigationDirection) -> Void)?
+
     // MARK: - Initializers
     /// Creates a new instance.
     /// - Parameters:
@@ -68,13 +72,15 @@ public struct PanoramaViewer: UIViewRepresentable {
     ///   - backgroundColor: The viewer background color.
     ///   - rotationHandler: Handle the panorama being rotated.
     ///   - cameraMoved: Handles the panorama camera being moved and returns the new Pitch, Yaw and Rotation.
-	public init(image: Binding<UIImage?>, panoramaType: CTPanoramaType = .spherical, controlMethod: CTPanoramaControlMethod = .touch, backgroundColor:UIColor = .black, rotationHandler: ((_ rotationKey: CGFloat) -> Void)? = nil, cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)? = nil) {
+	public init(image: Binding<UIImage?>, panoramaType: CTPanoramaType = .spherical, controlMethod: CTPanoramaControlMethod = .touch, startAngle: Float = 0, backgroundColor:UIColor = .black, rotationHandler: ((_ rotationKey: CGFloat) -> Void)? = nil, cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)? = nil, tapHandler: ((CTNavigationDirection) -> Void)? = nil) {
         self._image = image
         self.panoramaType = panoramaType
         self.controlMethod = controlMethod
+		self.startAngle = startAngle
         self.backgroundColor = backgroundColor
         self.rotationHandler = rotationHandler
         self.cameraMoved = cameraMoved
+		self.tapHandler = tapHandler
     }
     
     // MARK: - Functions
@@ -84,11 +90,13 @@ public struct PanoramaViewer: UIViewRepresentable {
     public func makeUIView(context: Context) -> UIViewType {
         // Create and initialize
         let view = CTPanoramaView()
+		view.startAngle = self.startAngle
         view.image = image
         view.controlMethod = controlMethod
         view.backgroundColor = backgroundColor
         view.rotationHandler = rotationHandler
-        
+		view.tapHandler = tapHandler
+
         // Save reference to connect to compass view
         PanoramaManager.lastPanoramaViewer = view
         
