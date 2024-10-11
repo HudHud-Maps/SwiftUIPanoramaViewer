@@ -43,6 +43,15 @@ import ImageIO
 		}
 	}
 
+	@objc public var cameraAngle: CGFloat {
+		let quaternion = self.cameraNode.orientation
+		// Convert quaternion to Euler angles (in radians)
+		let yaw = atan2(2 * (quaternion.y * quaternion.w - quaternion.x * quaternion.z),
+						1 - 2 * (quaternion.y * quaternion.y + quaternion.z * quaternion.z))
+
+		return CGFloat(-yaw)
+	}
+
 	@objc public var minFoV: CGFloat = 40
 	@objc public var maxFoV: CGFloat = 100
 
@@ -453,7 +462,7 @@ private extension CTPanoramaView {
 			}
 
 			prevLocation = location
-			reportMovement(CGFloat(-cameraNode.eulerAngles.y), xFov.toRadians())
+			reportMovement(self.cameraAngle, xFov.toRadians())
 		}
 	}
 
