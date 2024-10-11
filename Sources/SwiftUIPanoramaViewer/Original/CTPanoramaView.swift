@@ -26,12 +26,20 @@ import ImageIO
 	case spherical
 }
 
+@objc public enum CTNavigationDirection: Int, CaseIterable {
+	case north
+	case east
+	case south
+	case west
+}
+
 @objc public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
 	// MARK: Public properties
 
 	@objc public var compass: CTPanoramaCompass?
 	@objc public var movementHandler: ((_ rotationAngle: CGFloat, _ fieldOfViewAngle: CGFloat) -> Void)?
+	@objc public var tapHandler: ((CTNavigationDirection) -> Void)?
 
 	@objc public var panSpeed = CGPoint(x: 0.4, y: 0.4)
 	@objc public var startAngle: Float = 0
@@ -214,6 +222,34 @@ import ImageIO
 					completion?()
 				}
 			}
+		}
+	}
+
+	public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+		guard let touchLocation = touches.first?.location(in: sceneView) else { return }
+
+		// use this to approximate distance
+//        let hitResults = sceneView.hitTest(touchLocation, options: nil)
+//        print(hitResults.first?.localCoordinates.y)
+
+		print(touchLocation)
+		let tapIndicator = TapIndicator()
+		self.addSubview(tapIndicator)
+		tapIndicator.animateCircles(center: touchLocation)
+
+		let angle = self.cameraAngle
+		let adjustedRadians = angle.truncatingRemainder(dividingBy: 2 * .pi)
+		let degrees = adjustedRadians * 180 / .pi
+
+		switch degrees {
+		case -135.0..<(-45.0):
+			self.tapHandler?(.west)
+		case -45.0..<45.0:
+			self.tapHandler?(.north)
+		case 45.0..<135.0:
+			self.tapHandler?(.east)
+		default:
+			self.tapHandler?(.south)
 		}
 	}
 }
