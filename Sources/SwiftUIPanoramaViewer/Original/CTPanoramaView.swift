@@ -43,7 +43,7 @@ import ImageIO
 
 	@objc public var panSpeed = CGPoint(x: 0.4, y: 0.4)
 	@objc public var startAngle: Float = 0
-	@objc public var rotationHandler: ((_ rotationKey: CGFloat) -> Void)?
+	@objc public var rotationHandler: ((_ rotationKey: Float) -> Void)?
 
 	@objc public var angleOffset: Float = 0 {
 		didSet {
@@ -430,7 +430,7 @@ private extension CTPanoramaView {
 			//let resolution = Float(5.0)
 			let s = "\(Int(a * 0.50))\(Int(b * 0.70))"
 			let k = Int(s)!
-			rotationHandler(rotationAngle)
+			rotationHandler(Float(rotationAngle))
 			PanoramaManager.lastRotationKey = k
 		}
 	}

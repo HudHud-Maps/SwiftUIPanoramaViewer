@@ -56,7 +56,7 @@ public struct PanoramaViewer: UIViewRepresentable {
     public var backgroundColor:UIColor = .black
     
     /// Handles the view rotating.
-	public var rotationHandler: ((_ rotationKey: CGFloat) -> Void)?
+	public var rotationHandler: ((_ rotationKey: Float) -> Void)?
 
     /// Handles the camera being moved.
     public var cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)?
@@ -72,7 +72,7 @@ public struct PanoramaViewer: UIViewRepresentable {
     ///   - backgroundColor: The viewer background color.
     ///   - rotationHandler: Handle the panorama being rotated.
     ///   - cameraMoved: Handles the panorama camera being moved and returns the new Pitch, Yaw and Rotation.
-	public init(image: Binding<UIImage?>, panoramaType: CTPanoramaType = .spherical, controlMethod: CTPanoramaControlMethod = .touch, startAngle: Float = 0, backgroundColor:UIColor = .black, rotationHandler: ((_ rotationKey: CGFloat) -> Void)? = nil, cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)? = nil, tapHandler: ((CTNavigationDirection) -> Void)? = nil) {
+	public init(image: Binding<UIImage?>, panoramaType: CTPanoramaType = .spherical, controlMethod: CTPanoramaControlMethod = .touch, startAngle: Float = 0, backgroundColor:UIColor = .black, rotationHandler: ((_ rotationKey: Float) -> Void)? = nil, cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)? = nil, tapHandler: ((CTNavigationDirection) -> Void)? = nil) {
         self._image = image
         self.panoramaType = panoramaType
         self.controlMethod = controlMethod
