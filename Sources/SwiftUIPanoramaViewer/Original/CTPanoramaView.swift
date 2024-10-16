@@ -237,7 +237,7 @@ import ImageIO
 		self.addSubview(tapIndicator)
 		tapIndicator.animateCircles(center: touchLocation)
 
-		let angle = self.cameraAngle
+		let angle = Float(self.cameraAngle) + self.startAngle
 		let adjustedRadians = angle.truncatingRemainder(dividingBy: 2 * .pi)
 		let degrees = adjustedRadians * 180 / .pi
 
