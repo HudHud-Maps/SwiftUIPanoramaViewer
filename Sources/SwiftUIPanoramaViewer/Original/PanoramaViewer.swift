@@ -91,11 +91,13 @@ public struct PanoramaViewer: UIViewRepresentable {
         // Create and initialize
         let view = CTPanoramaView()
 		view.startAngle = self.startAngle
-        view.image = image
         view.controlMethod = controlMethod
         view.backgroundColor = backgroundColor
         view.rotationHandler = rotationHandler
 		view.tapHandler = tapHandler
+		if let image {
+			view.transition(to: image, animation: .none)
+		}
 
         // Save reference to connect to compass view
         PanoramaManager.lastPanoramaViewer = view
@@ -109,9 +111,9 @@ public struct PanoramaViewer: UIViewRepresentable {
     ///   - uiView: The `PanoramaViewer` that is updating.
     ///   - context: The context that the view is updating in.
     public func updateUIView(_ uiView: UIViewType, context: Context) {
-        if PanoramaManager.shouldUpdateImage, let image {
-			uiView.animate(to: image) {}
-            PanoramaManager.shouldUpdateImage = false
+        if let image, image != uiView.image {
+			print("image changed, animating")
+			uiView.transition(to: image)
         }
     }
 }

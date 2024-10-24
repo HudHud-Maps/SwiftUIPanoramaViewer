@@ -35,6 +35,11 @@ import ImageIO
 
 @objc public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
+	public enum AnimateOption {
+		case none
+		case fade(duration: TimeInterval)
+	}
+
 	// MARK: Public properties
 
 	@objc public var compass: CTPanoramaCompass?
@@ -63,18 +68,7 @@ import ImageIO
 	@objc public var minFoV: CGFloat = 40
 	@objc public var maxFoV: CGFloat = 100
 
-	@objc public var image: UIImage? {
-		didSet {
-			guard let image else { return }
-
-			self.geometryNode?.removeFromParentNode()
-			let geometryNode = createGeometryNode(for: image)
-			scene.rootNode.addChildNode(geometryNode)
-			self.geometryNode = geometryNode
-
-			resetCameraAngles();
-		}
-	}
+	private(set) var image: UIImage?
 
 	@objc public var overlayView: UIView? {
 		didSet {
@@ -204,7 +198,7 @@ import ImageIO
 		self.reportMovement(CGFloat(startAngle), xFov.toRadians(), callHandler: false)
 	}
 
-	public func animate(to image: UIImage, duration: TimeInterval = 0.5, completion: (() -> Void)? = nil) {
+	public func transition(to image: UIImage, animation: AnimateOption = .fade(duration: 0.5), completion: (()->Void)? = nil) {
 		self.temporaryGeometryNode?.removeAllActions()
 		self.geometryNode?.removeAllActions()
 
@@ -213,13 +207,23 @@ import ImageIO
 		self.temporaryGeometryNode = newNode
 
 		DispatchQueue.main.async {
-			self.geometryNode?.runAction(SCNAction.fadeOut(duration: duration))
-			newNode.runAction(SCNAction.fadeIn(duration: duration)) {
+			switch animation {
+			case .none:
 				self.geometryNode?.removeFromParentNode()
 				self.geometryNode = newNode
 				self.temporaryGeometryNode = nil
-				DispatchQueue.main.async {
-					completion?()
+				self.image = image
+				completion?()
+			case .fade(let duration):
+				self.geometryNode?.runAction(SCNAction.fadeOut(duration: duration))
+				newNode.runAction(SCNAction.fadeIn(duration: duration)) {
+					self.geometryNode?.removeFromParentNode()
+					self.geometryNode = newNode
+					self.temporaryGeometryNode = nil
+					DispatchQueue.main.async {
+						self.image = image
+						completion?()
+					}
 				}
 			}
 		}
