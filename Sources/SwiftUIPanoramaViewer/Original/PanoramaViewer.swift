@@ -111,7 +111,7 @@ public struct PanoramaViewer: UIViewRepresentable {
     ///   - uiView: The `PanoramaViewer` that is updating.
     ///   - context: The context that the view is updating in.
     public func updateUIView(_ uiView: UIViewType, context: Context) {
-        if let image, image != uiView.image {
+		if let image, image != uiView.image, uiView.isTransitioningImage == false {
 			print("image changed, animating")
 			uiView.transition(to: image)
         }

@@ -69,6 +69,7 @@ import ImageIO
 	@objc public var maxFoV: CGFloat = 100
 
 	private(set) var image: UIImage?
+	private(set) var isTransitioningImage: Bool = false
 
 	@objc public var overlayView: UIView? {
 		didSet {
@@ -199,6 +200,7 @@ import ImageIO
 	}
 
 	public func transition(to image: UIImage, animation: AnimateOption = .fade(duration: 0.5), completion: (()->Void)? = nil) {
+		self.isTransitioningImage = true
 		self.temporaryGeometryNode?.removeAllActions()
 		self.geometryNode?.removeAllActions()
 
@@ -213,6 +215,7 @@ import ImageIO
 				self.geometryNode = newNode
 				self.temporaryGeometryNode = nil
 				self.image = image
+				self.isTransitioningImage = false
 				completion?()
 			case .fade(let duration):
 				self.geometryNode?.runAction(SCNAction.fadeOut(duration: duration))
@@ -222,6 +225,7 @@ import ImageIO
 					self.temporaryGeometryNode = nil
 					DispatchQueue.main.async {
 						self.image = image
+						self.isTransitioningImage = false
 						completion?()
 					}
 				}
