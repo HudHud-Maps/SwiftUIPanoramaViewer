@@ -12,6 +12,7 @@ import UIKit
 
 // Handles comminication with any panoramaview that has been embedded in a SwiftUI `View`.
 /// - Remark: Only one `PanoramaViewer` can be active in an app at one time.
+@MainActor
 public class PanoramaManager {
     
     // MARK: - Enumerations
@@ -29,17 +30,17 @@ public class PanoramaManager {
     static public let emptyPoint:Float = 1000.0
     
     /// Reference to the last panorama viewer that has been added to the app.
-    static public weak var lastPanoramaViewer:CTPanoramaView? = nil
+    @MainActor static public weak var lastPanoramaViewer:CTPanoramaView? = nil
     
     /// If `true` the panorama view should updated the current image being displayed, if `false` the image will update.
     /// - Remark: This feature is used to keep the panorama viewer from reseting itself when the SwiftUI view it is on updates layout but the "location" being viewed hasn't hanged.
-    static public var shouldUpdateImage:Bool = false
+    @MainActor static public var shouldUpdateImage:Bool = false
     
     /// If `true` when the image changes the rotation of the camera resets when a new image is loaded, else it does not.
-    static public var shouldResetCameraAngle:Bool = true
+    @MainActor static public var shouldResetCameraAngle:Bool = true
     
     /// The value of the last rotation key.
-    static public var lastRotationKey:Int = 0
+    @MainActor static public var lastRotationKey:Int = 0
     
     /// Defines the offsets used to make a navigation target.
     static public let targetSizeNavigation:Float = 10.0

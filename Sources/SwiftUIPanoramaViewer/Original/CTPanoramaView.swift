@@ -11,6 +11,7 @@ import SceneKit
 import CoreMotion
 import ImageIO
 
+@MainActor
 @objc public protocol CTPanoramaCompass {
 	func updateUI(rotationAngle: CGFloat, fieldOfViewAngle: CGFloat)
 }
@@ -570,6 +571,7 @@ private extension CTPanoramaView {
 	}
 }
 
+@MainActor
 private extension CMDeviceMotion {
 
 	func orientation() -> SCNVector4 {
@@ -668,3 +670,5 @@ private extension GLKQuaternion {
 		}
 	}
 }
+
+extension CMMotionManager: @retroactive @unchecked Sendable {}
