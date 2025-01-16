@@ -242,8 +242,6 @@ import ImageIO
 //        print(hitResults.first?.localCoordinates.y)
 
 		print(touchLocation)
-        let percentage = touchLocation.x / sceneView.frame.width
-        print(percentage)
         let tapIndicator = TapIndicator()
 		self.addSubview(tapIndicator)
 		tapIndicator.animateCircles(center: touchLocation)
@@ -251,8 +249,16 @@ import ImageIO
 		let angle = Float(self.cameraAngle) + self.startAngle
 		let adjustedRadians = angle.truncatingRemainder(dividingBy: 2 * .pi)
 		let degrees = adjustedRadians * 180 / .pi
+        
+        let percentage = touchLocation.x / sceneView.frame.width
+        print(percentage)
+        let fieldOfView = self.cameraNode.camera?.fieldOfView ?? 0
+        let angleToAdd = fieldOfView * percentage
+        let startCameraAngle = self.cameraAngle - (fieldOfView / 2)
+        let finalAngle = startCameraAngle * angleToAdd
+        print("percentage: \(percentage), fieldOfView: \(fieldOfView), angleToAdd: \(angleToAdd), startCameraAngle: \(startCameraAngle), final angle: \(finalAngle)")
 
-        self.tapHandler?(degrees)
+        self.tapHandler?(Float(finalAngle))
 	}
 }
 
