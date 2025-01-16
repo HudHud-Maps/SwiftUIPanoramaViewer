@@ -45,7 +45,7 @@ import ImageIO
 
 	@objc public var compass: CTPanoramaCompass?
 	@objc public var movementHandler: ((_ rotationAngle: CGFloat, _ fieldOfViewAngle: CGFloat) -> Void)?
-	@objc public var tapHandler: ((CTNavigationDirection) -> Void)?
+    @objc public var tapHandler: ((Float) -> Void)?
 
 	@objc public var panSpeed = CGPoint(x: 0.4, y: 0.4)
 	@objc public var startAngle: Float = 0
@@ -242,7 +242,9 @@ import ImageIO
 //        print(hitResults.first?.localCoordinates.y)
 
 		print(touchLocation)
-		let tapIndicator = TapIndicator()
+        let percentage = touchLocation.x / sceneView.frame.width
+        print(percentage)
+        let tapIndicator = TapIndicator()
 		self.addSubview(tapIndicator)
 		tapIndicator.animateCircles(center: touchLocation)
 
@@ -250,16 +252,7 @@ import ImageIO
 		let adjustedRadians = angle.truncatingRemainder(dividingBy: 2 * .pi)
 		let degrees = adjustedRadians * 180 / .pi
 
-		switch degrees {
-		case -135.0..<(-45.0):
-			self.tapHandler?(.west)
-		case -45.0..<45.0:
-			self.tapHandler?(.north)
-		case 45.0..<135.0:
-			self.tapHandler?(.east)
-		default:
-			self.tapHandler?(.south)
-		}
+        self.tapHandler?(degrees)
 	}
 }
 
