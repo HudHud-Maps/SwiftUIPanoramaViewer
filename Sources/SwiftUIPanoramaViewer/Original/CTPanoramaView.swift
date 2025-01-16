@@ -11,15 +11,14 @@ import UIKit
 import SceneKit
 import ImageIO
 import SwiftUI
-import SwiftletUtilities
-import LogManager
 
 #if !os(tvOS)
-import CoreMotion
+@preconcurrency import CoreMotion
 #endif
 
 /// The `CTPanoramaCompass` is used to tie a `CTPieSliceView` to a `CTPanoramaView` for automatic rotation when the Panorama rotates.
 /// - Remark: This protocol is deprecated when using the panorama viewer in a SwiftUI app.
+@MainActor
 @objc public protocol CTPanoramaCompass {
     
     // MARK: - Functions
@@ -365,13 +364,12 @@ import CoreMotion
             guard (panoramaView.controlMethod == .motion || panoramaView.controlMethod == .both) else {return}
 
             guard let motionData = motionData else {
-                Log.error(subsystem: "CTPanoramaView", category: "startMotionUpdates", "\(String(describing: error?.localizedDescription))")
                 panoramaView.motionManager.stopDeviceMotionUpdates()
                 return
             }
 
 
-            Execute.onMain {
+            DispatchQueue.main.async {
                 if panoramaView.panoramaType == .cylindrical {
 
                     let rotationMatrix = motionData.attitude.rotationMatrix
@@ -792,6 +790,7 @@ import CoreMotion
 
 #if !os(tvOS)
 /// Extends `CMDeviceMotion`  for `CTPanoramaViewer`.
+@MainActor
 private extension CMDeviceMotion {
 
     // MARK: - Functions
@@ -805,7 +804,7 @@ private extension CMDeviceMotion {
         let result: SCNVector4
 
         // From UIApplication.shared.statusBarOrientation
-        switch HardwareInformation.windowOrientation {
+        switch windowOrientation {
 
         case .landscapeRight:
             let cq1 = GLKQuaternionMakeWithAngleAndAxis(.pi/2, 0, 1, 0)
@@ -906,5 +905,28 @@ private extension GLKQuaternion {
         }
     }
     
+}
+#endif
+
+#if os(iOS)
+@MainActor public var windowOrientation: UIInterfaceOrientation {
+    
+    // Ensure that we are running on the main thread.
+    guard Thread.isMainThread else {
+        return .unknown
+    }
+    
+    // Ensure that a scene has been connected.
+    guard UIApplication.shared.connectedScenes.count > 0 else {
+        return .unknown
+    }
+    
+    // Ensure we can get a scene and that it is the foreground scene.
+    guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene, windowScene.activationState == .foregroundActive else {
+        return .unknown
+    }
+    
+    // Return the scene's orientation.
+    return windowScene.interfaceOrientation
 }
 #endif
