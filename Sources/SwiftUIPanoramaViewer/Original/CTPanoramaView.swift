@@ -147,6 +147,13 @@ import ImageIO
 			cameraNode.camera?.fieldOfView = newValue
 		}
 	}
+    
+    private var horizontalFieldOfView: CGFloat {
+        let verticalFieldOfViewInRadians = (cameraNode.camera?.fieldOfView ?? 0) * .pi / 180
+        let aspectRatio = bounds.width / bounds.height
+        let horizontalFieldOfViewInRadians = 2 * atan(tan(verticalFieldOfViewInRadians / 2) * aspectRatio)
+        return horizontalFieldOfViewInRadians * 180 / .pi
+    }
 
 	// MARK: Class lifecycle methods
 
@@ -252,11 +259,10 @@ import ImageIO
         
         let percentage = touchLocation.x / sceneView.frame.width
         print(percentage)
-        let fieldOfView = self.cameraNode.camera?.fieldOfView ?? 0
-        let angleToAdd = fieldOfView * percentage
-        let startCameraAngle = self.cameraAngle - (fieldOfView / 2)
-        let finalAngle = startCameraAngle * angleToAdd
-        print("percentage: \(percentage), fieldOfView: \(fieldOfView), angleToAdd: \(angleToAdd), startCameraAngle: \(startCameraAngle), final angle: \(finalAngle)")
+        let angleToAdd = horizontalFieldOfView * percentage
+        let startCameraAngle = self.cameraAngle - (horizontalFieldOfView / 2)
+        let finalAngle = startCameraAngle + angleToAdd
+        print("percentage: \(percentage), fieldOfView: \(horizontalFieldOfView), angleToAdd: \(angleToAdd), startCameraAngle: \(startCameraAngle), final angle: \(finalAngle)")
 
         self.tapHandler?(Float(finalAngle))
 	}
