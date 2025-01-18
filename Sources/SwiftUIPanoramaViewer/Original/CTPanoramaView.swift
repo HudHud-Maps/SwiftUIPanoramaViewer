@@ -260,7 +260,8 @@ import ImageIO
         let percentage = touchLocation.x / sceneView.frame.width
         print(percentage)
         let angleToAdd = horizontalFieldOfView * percentage
-        let cameraAngleInDegrees = CGFloat(cameraNode.eulerAngles.y * 180 / .pi)
+        let cameraAngleInRadians = cameraNode.eulerAngles.y - startAngle
+        let cameraAngleInDegrees = CGFloat(cameraAngleInRadians * 180 / .pi)
         let startCameraAngle = cameraAngleInDegrees - (horizontalFieldOfView / 2)
         let finalAngle = startCameraAngle + angleToAdd
         print("percentage: \(percentage), fieldOfView: \(horizontalFieldOfView), angleToAdd: \(angleToAdd), startCameraAngle: \(startCameraAngle), final angle: \(finalAngle)")
