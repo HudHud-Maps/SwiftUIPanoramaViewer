@@ -244,17 +244,11 @@ import ImageIO
 	public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
 		guard let touchLocation = touches.first?.location(in: sceneView) else { return }
 
-		// use this to approximate distance
-//        let hitResults = sceneView.hitTest(touchLocation, options: nil)
-//        print(hitResults.first?.localCoordinates.y)
-
 		print(touchLocation)
         let tapIndicator = TapIndicator()
 		self.addSubview(tapIndicator)
 		tapIndicator.animateCircles(center: touchLocation)
 
-		let angle = Float(self.cameraAngle) + self.startAngle
-		let adjustedRadians = angle.truncatingRemainder(dividingBy: 2 * .pi)
         if let localSphereCoordinates = sceneView.hitTest(
             touchLocation, options: nil
         ).first?.localCoordinates {
@@ -263,18 +257,6 @@ import ImageIO
             print("angle is: \(angle)")
             tapHandler?(Float(angle))
         }
-//		let degrees = adjustedRadians * 180 / .pi
-        
-//        let percentage = touchLocation.x / sceneView.frame.width
-//        print(percentage)
-//        let angleToAdd = horizontalFieldOfView * percentage
-//        let cameraAngleInRadians = abs(cameraNode.eulerAngles.y - startAngle)
-//        let cameraAngleInDegrees = CGFloat(cameraAngleInRadians * 180 / .pi)
-//        let startCameraAngle = cameraAngleInDegrees - (horizontalFieldOfView / 2)
-//        let finalAngle = startCameraAngle + angleToAdd
-//        print("percentage: \(percentage), fieldOfView: \(horizontalFieldOfView), angleToAdd: \(angleToAdd), startCameraAngle: \(startCameraAngle), final angle: \(finalAngle)")
-//
-//        self.tapHandler?(Float(finalAngle))
 	}
 }
 
