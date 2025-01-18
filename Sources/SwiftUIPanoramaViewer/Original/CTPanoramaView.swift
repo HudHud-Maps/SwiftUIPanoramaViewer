@@ -258,9 +258,8 @@ import ImageIO
         if let localSphereCoordinates = sceneView.hitTest(
             touchLocation, options: nil
         ).first?.localCoordinates {
-            let imageUCoordinate = 0.5 + (atan2(localSphereCoordinates.z, localSphereCoordinates.x) / (2 * .pi))
-            let imageWidth = image?.size.width ?? 0
-            let angle = (imageWidth * 360) + 90 // the image starts before 90 degrees, so we add it back
+            let widthPercentage = 0.5 + (atan2(localSphereCoordinates.z, localSphereCoordinates.x) / (2 * .pi))
+            let angle = ((widthPercentage * 360) + 90).truncatingRemainder(dividingBy: 360) // the image starts before 90 degrees, so we add it back
             print("angle is: \(angle)")
             tapHandler?(Float(angle))
         }
