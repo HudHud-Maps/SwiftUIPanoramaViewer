@@ -255,18 +255,27 @@ import ImageIO
 
 		let angle = Float(self.cameraAngle) + self.startAngle
 		let adjustedRadians = angle.truncatingRemainder(dividingBy: 2 * .pi)
+        if let localSphereCoordinates = sceneView.hitTest(
+            touchLocation, options: nil
+        ).first?.localCoordinates {
+            let imageUCoordinate = 0.5 + (atan2(localSphereCoordinates.z, localSphereCoordinates.x) / (2 * .pi))
+            let imageWidth = image?.size.width ?? 0
+            let angle = (imageWidth * 360) + 90 // the image starts before 90 degrees, so we add it back
+            print("angle is: \(angle)")
+            tapHandler?(Float(angle))
+        }
 //		let degrees = adjustedRadians * 180 / .pi
         
-        let percentage = touchLocation.x / sceneView.frame.width
-        print(percentage)
-        let angleToAdd = horizontalFieldOfView * percentage
-        let cameraAngleInRadians = cameraNode.eulerAngles.y - startAngle
-        let cameraAngleInDegrees = CGFloat(cameraAngleInRadians * 180 / .pi)
-        let startCameraAngle = cameraAngleInDegrees - (horizontalFieldOfView / 2)
-        let finalAngle = startCameraAngle + angleToAdd
-        print("percentage: \(percentage), fieldOfView: \(horizontalFieldOfView), angleToAdd: \(angleToAdd), startCameraAngle: \(startCameraAngle), final angle: \(finalAngle)")
-
-        self.tapHandler?(Float(finalAngle))
+//        let percentage = touchLocation.x / sceneView.frame.width
+//        print(percentage)
+//        let angleToAdd = horizontalFieldOfView * percentage
+//        let cameraAngleInRadians = abs(cameraNode.eulerAngles.y - startAngle)
+//        let cameraAngleInDegrees = CGFloat(cameraAngleInRadians * 180 / .pi)
+//        let startCameraAngle = cameraAngleInDegrees - (horizontalFieldOfView / 2)
+//        let finalAngle = startCameraAngle + angleToAdd
+//        print("percentage: \(percentage), fieldOfView: \(horizontalFieldOfView), angleToAdd: \(angleToAdd), startCameraAngle: \(startCameraAngle), final angle: \(finalAngle)")
+//
+//        self.tapHandler?(Float(finalAngle))
 	}
 }
 
