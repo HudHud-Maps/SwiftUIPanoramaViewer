@@ -248,7 +248,7 @@ import ImageIO
 
 		let angle = Float(self.cameraAngle) + self.startAngle
 		let adjustedRadians = angle.truncatingRemainder(dividingBy: 2 * .pi)
-		let degrees = adjustedRadians * 180 / .pi
+//		let degrees = adjustedRadians * 180 / .pi
         
         let percentage = touchLocation.x / sceneView.frame.width
         print(percentage)
