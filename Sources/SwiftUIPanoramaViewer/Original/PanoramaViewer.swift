@@ -35,15 +35,38 @@ import UIKit
 /// }
 /// ```
 ///
-public struct PanoramaViewer: UIViewRepresentable {
+public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
+
+	public enum ProgressiveImage {
+		case loading(progress: Float, image: UIImage?, id: ID)
+		case finished(image: UIImage, id: ID)
+
+		var image: UIImage? {
+			switch self {
+			case let .loading(_, image, _):
+				return image
+			case let .finished(image, _):
+				return image
+			}
+		}
+	}
+
+	public class Coordinator {
+		var id: ID? = nil
+	}
+
+	public func makeCoordinator() -> Coordinator {
+		return Coordinator()
+	}
+
     // MARK: - Type
     /// The type of view being managed by the `PanoramaViewer`.
     public typealias UIViewType = CTPanoramaView
     
     // MARK: - Properties
     /// The `UIImage` being displayed in the `PanoramaViewer`.
-    @Binding public var image: UIImage?
-    
+	@Binding public var progressiveImage: ProgressiveImage?
+
     /// The type of panorama image being displayed.
     public var panoramaType: CTPanoramaType = .spherical
     
@@ -72,8 +95,8 @@ public struct PanoramaViewer: UIViewRepresentable {
     ///   - backgroundColor: The viewer background color.
     ///   - rotationHandler: Handle the panorama being rotated.
     ///   - cameraMoved: Handles the panorama camera being moved and returns the new Pitch, Yaw and Rotation.
-    public init(image: Binding<UIImage?>, panoramaType: CTPanoramaType = .spherical, controlMethod: CTPanoramaControlMethod = .touch, startAngle: Float = 0, backgroundColor:UIColor = .black, rotationHandler: ((_ rotationKey: Float) -> Void)? = nil, cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)? = nil, tapHandler: ((Float) -> Void)? = nil) {
-        self._image = image
+	public init(progressiveImage: Binding<ProgressiveImage?>, panoramaType: CTPanoramaType = .spherical, controlMethod: CTPanoramaControlMethod = .touch, startAngle: Float = 0, backgroundColor:UIColor = .black, rotationHandler: ((_ rotationKey: Float) -> Void)? = nil, cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)? = nil, tapHandler: ((Float) -> Void)? = nil) {
+        self._progressiveImage = progressiveImage
         self.panoramaType = panoramaType
         self.controlMethod = controlMethod
 		self.startAngle = startAngle
@@ -95,7 +118,7 @@ public struct PanoramaViewer: UIViewRepresentable {
         view.backgroundColor = backgroundColor
         view.rotationHandler = rotationHandler
 		view.tapHandler = tapHandler
-		if let image {
+		if let image = self.progressiveImage?.image {
 			view.transition(to: image, animation: .none)
 		}
 
@@ -111,9 +134,17 @@ public struct PanoramaViewer: UIViewRepresentable {
     ///   - uiView: The `PanoramaViewer` that is updating.
     ///   - context: The context that the view is updating in.
     public func updateUIView(_ uiView: UIViewType, context: Context) {
-		if let image, image != uiView.image, uiView.isTransitioningImage == false {
-			print("image changed, animating")
-			uiView.transition(to: image)
-        }
+		switch self.progressiveImage {
+		case let .loading(_, image, id):
+			if let image, image != uiView.image, uiView.isTransitioningImage == false {
+				let animation: CTPanoramaView.AnimateOption = context.coordinator.id == id ? .none : .fade(duration: 0.5)
+				uiView.transition(to: image, animation: animation)
+			}
+		case let .finished(image, id):
+			let animation: CTPanoramaView.AnimateOption = context.coordinator.id == id ? .none : .fade(duration: 0.5)
+			uiView.transition(to: image, animation: animation)
+		case .none:
+			break
+		}
     }
 }
