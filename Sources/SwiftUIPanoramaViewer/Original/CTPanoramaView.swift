@@ -105,7 +105,7 @@ import ImageIO
 	private let scene = SCNScene()
 	private let motionManager = CMMotionManager()
 	private var geometryNode: SCNNode?
-	private var temporaryGeometryNode: SCNNode?
+	private var temporaryGeometryNodes: [SCNNode] = []
 	private var prevLocation = CGPoint.zero
 	private var prevRotation = CGFloat.zero
 	private var prevBounds = CGRect.zero
@@ -209,19 +209,19 @@ import ImageIO
 
 	public func transition(to image: UIImage, animation: AnimateOption = .fade(duration: 0.5), completion: (()->Void)? = nil) {
 		self.isTransitioningImage = true
-		self.temporaryGeometryNode?.removeAllActions()
+        self.temporaryGeometryNodes.last?.removeAllActions()
 		self.geometryNode?.removeAllActions()
 
 		let newNode = self.createGeometryNode(for: image)
 		self.scene.rootNode.addChildNode(newNode)
-		self.temporaryGeometryNode = newNode
+        self.temporaryGeometryNodes.insert(newNode, at: 0)
 
 		DispatchQueue.main.async {
 			switch animation {
 			case .none:
 				self.geometryNode?.removeFromParentNode()
 				self.geometryNode = newNode
-				self.temporaryGeometryNode = nil
+                _ = self.temporaryGeometryNodes.popLast()
 				self.image = image
 				self.isTransitioningImage = false
 				completion?()
@@ -230,7 +230,7 @@ import ImageIO
 				newNode.runAction(SCNAction.fadeIn(duration: duration)) {
 					self.geometryNode?.removeFromParentNode()
 					self.geometryNode = newNode
-					self.temporaryGeometryNode = nil
+                    _ = self.temporaryGeometryNodes.popLast()
 					DispatchQueue.main.async {
 						self.image = image
 						self.isTransitioningImage = false
