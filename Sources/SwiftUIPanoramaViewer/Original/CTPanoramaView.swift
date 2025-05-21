@@ -206,6 +206,10 @@ import ImageIO
 		totalY = Float.zero
 		self.reportMovement(CGFloat(startAngle), xFov.toRadians(), callHandler: false)
 	}
+    
+    public func updateRotation() {
+        cameraNode.eulerAngles = SCNVector3Make(0, startAngle, 0)
+    }
 
 	public func transition(to image: UIImage, animation: AnimateOption = .fade(duration: 0.5), completion: (()->Void)? = nil) {
 		self.isTransitioningImage = true

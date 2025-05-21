@@ -53,6 +53,7 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
 
 	public class Coordinator {
 		var id: ID? = nil
+        var lastAppliedStartAngle: Float = 0
 	}
 
 	public func makeCoordinator() -> Coordinator {
@@ -73,7 +74,7 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
     /// The type of user interaction that the `PanoramaViewer` supports.
     public var controlMethod: CTPanoramaControlMethod = .touch
 
-	public var startAngle: Float = 0
+	public var rotation: Float = 0
 
     /// The viewer background color.
     public var backgroundColor:UIColor = .black
@@ -95,11 +96,11 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
     ///   - backgroundColor: The viewer background color.
     ///   - rotationHandler: Handle the panorama being rotated.
     ///   - cameraMoved: Handles the panorama camera being moved and returns the new Pitch, Yaw and Rotation.
-	public init(progressiveImage: Binding<ProgressiveImage?>, panoramaType: CTPanoramaType = .spherical, controlMethod: CTPanoramaControlMethod = .touch, startAngle: Float = 0, backgroundColor:UIColor = .black, rotationHandler: ((_ rotationKey: Float) -> Void)? = nil, cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)? = nil, tapHandler: ((Float) -> Void)? = nil) {
+	public init(progressiveImage: Binding<ProgressiveImage?>, panoramaType: CTPanoramaType = .spherical, controlMethod: CTPanoramaControlMethod = .touch, rotation: Float = 0, backgroundColor:UIColor = .black, rotationHandler: ((_ rotationKey: Float) -> Void)? = nil, cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)? = nil, tapHandler: ((Float) -> Void)? = nil) {
         self._progressiveImage = progressiveImage
         self.panoramaType = panoramaType
         self.controlMethod = controlMethod
-		self.startAngle = startAngle
+        self.rotation = rotation
         self.backgroundColor = backgroundColor
         self.rotationHandler = rotationHandler
         self.cameraMoved = cameraMoved
@@ -111,9 +112,10 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
     /// - Parameter context: The context to create the viewer in.
     /// - Returns: Returns the new `PanoramaViewer`.
     public func makeUIView(context: Context) -> UIViewType {
+        print("Hello from makeUIView\n")
         // Create and initialize
         let view = CTPanoramaView()
-		view.startAngle = self.startAngle
+		view.startAngle = self.rotation
         view.controlMethod = controlMethod
         view.backgroundColor = backgroundColor
         view.rotationHandler = rotationHandler
@@ -129,11 +131,27 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
         return view
     }
     
+
+
+    
     /// Handles the `PanoramaViewer` being updated.
     /// - Parameters:
     ///   - uiView: The `PanoramaViewer` that is updating.
     ///   - context: The context that the view is updating in.
     public func updateUIView(_ uiView: UIViewType, context: Context) {
+        // Print current angles to debug
+        print("DEBUG: Current angles - uiView.startAngle: \(uiView.startAngle), self.startAngle: \(self.rotation)")
+        
+        // Only update if the angle has changed significantly from the last applied value
+        if abs(context.coordinator.lastAppliedStartAngle - self.rotation) > 0.05 {
+            print("DEBUG: ✅ Applying angle change - Old: \(uiView.startAngle), New: \(self.rotation), Difference: \(abs(context.coordinator.lastAppliedStartAngle - self.rotation))")
+            uiView.startAngle = self.rotation
+            uiView.updateRotation()
+            context.coordinator.lastAppliedStartAngle = self.rotation
+        } else {
+            print("DEBUG: ❌ Skipping angle update - Difference too small: \(abs(context.coordinator.lastAppliedStartAngle - self.rotation)) lastApplied: \(context.coordinator.lastAppliedStartAngle), self.startAngle: \(self.rotation)")
+        }
+        
 		switch self.progressiveImage {
 		case let .loading(_, image, id):
 			if let image, image != uiView.image, uiView.isTransitioningImage == false {
