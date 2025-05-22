@@ -38,14 +38,14 @@ import UIKit
 public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
 
 	public enum ProgressiveImage {
-		case loading(progress: Float, image: UIImage?, id: ID)
-		case finished(image: UIImage, id: ID)
+        case loading(progress: Float, image: UIImage?, id: ID, angle: Float)
+        case finished(image: UIImage, id: ID, angle: Float)
 
 		var image: UIImage? {
 			switch self {
-			case let .loading(_, image, _):
+			case let .loading(_, image, _, _):
 				return image
-			case let .finished(image, _):
+			case let .finished(image, _, _):
 				return image
 			}
 		}
@@ -54,6 +54,7 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
 	public class Coordinator {
 		var id: ID? = nil
         var lastAppliedStartAngle: Float = 0
+        weak var panoramaView: CTPanoramaView?
 	}
 
 	public func makeCoordinator() -> Coordinator {
@@ -74,16 +75,10 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
     /// The type of user interaction that the `PanoramaViewer` supports.
     public var controlMethod: CTPanoramaControlMethod = .touch
 
-	public var rotation: Float = 0
+	@Binding public var rotation: Float
 
     /// The viewer background color.
     public var backgroundColor:UIColor = .black
-    
-    /// Handles the view rotating.
-	public var rotationHandler: ((_ rotationKey: Float) -> Void)?
-
-    /// Handles the camera being moved.
-    public var cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)?
 
     public var tapHandler: ((Float) -> Void)?
 
@@ -95,15 +90,12 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
     ///   - controlMethod: The type of user interaction that the `PanoramaViewer` supports.
     ///   - backgroundColor: The viewer background color.
     ///   - rotationHandler: Handle the panorama being rotated.
-    ///   - cameraMoved: Handles the panorama camera being moved and returns the new Pitch, Yaw and Rotation.
-	public init(progressiveImage: Binding<ProgressiveImage?>, panoramaType: CTPanoramaType = .spherical, controlMethod: CTPanoramaControlMethod = .touch, rotation: Float = 0, backgroundColor:UIColor = .black, rotationHandler: ((_ rotationKey: Float) -> Void)? = nil, cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)? = nil, tapHandler: ((Float) -> Void)? = nil) {
+	public init(progressiveImage: Binding<ProgressiveImage?>, panoramaType: CTPanoramaType = .spherical, controlMethod: CTPanoramaControlMethod = .touch, rotation: Binding<Float>, backgroundColor:UIColor = .black, tapHandler: ((Float) -> Void)? = nil) {
         self._progressiveImage = progressiveImage
         self.panoramaType = panoramaType
         self.controlMethod = controlMethod
-        self.rotation = rotation
+        self._rotation = rotation
         self.backgroundColor = backgroundColor
-        self.rotationHandler = rotationHandler
-        self.cameraMoved = cameraMoved
 		self.tapHandler = tapHandler
     }
     
@@ -115,14 +107,18 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
         print("Hello from makeUIView\n")
         // Create and initialize
         let view = CTPanoramaView()
-		view.startAngle = self.rotation
+		view.startAngle = self.rotation.toRadians()
         view.controlMethod = controlMethod
         view.backgroundColor = backgroundColor
-        view.rotationHandler = rotationHandler
+        view.rotationHandler = { rotation in
+            self.rotation = rotation.toDegrees()
+        }
 		view.tapHandler = tapHandler
 		if let image = self.progressiveImage?.image {
-			view.transition(to: image, animation: .none)
+			view.transition(to: image, startAngle: 0, animation: .none)
 		}
+
+        context.coordinator.panoramaView = view
 
         // Save reference to connect to compass view
         PanoramaManager.lastPanoramaViewer = view
@@ -131,38 +127,46 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
         return view
     }
     
-
-
-    
     /// Handles the `PanoramaViewer` being updated.
     /// - Parameters:
     ///   - uiView: The `PanoramaViewer` that is updating.
     ///   - context: The context that the view is updating in.
     public func updateUIView(_ uiView: UIViewType, context: Context) {
         // Print current angles to debug
-        print("DEBUG: Current angles - uiView.startAngle: \(uiView.startAngle), self.startAngle: \(self.rotation)")
-        
+        print("DEBUG: Current angles - uiView.startAngle: \(uiView.startAngle), self.startAngle: \(self.rotation.toRadians())")
+
         // Only update if the angle has changed significantly from the last applied value
-        if abs(context.coordinator.lastAppliedStartAngle - self.rotation) > 0.05 {
-            print("DEBUG: ✅ Applying angle change - Old: \(uiView.startAngle), New: \(self.rotation), Difference: \(abs(context.coordinator.lastAppliedStartAngle - self.rotation))")
-            uiView.startAngle = self.rotation
-            uiView.updateRotation()
-            context.coordinator.lastAppliedStartAngle = self.rotation
+        if abs(context.coordinator.lastAppliedStartAngle - self.rotation.toRadians()) > 0.05 {
+            print("DEBUG: ✅ Applying angle change - Old: \(uiView.startAngle), New: \(self.rotation.toRadians()), Difference: \(abs(context.coordinator.lastAppliedStartAngle - self.rotation.toRadians()))")
+            uiView.startAngle = self.rotation.toRadians()
+//            uiView.updateRotation()
+            context.coordinator.lastAppliedStartAngle = self.rotation.toRadians()
         } else {
-            print("DEBUG: ❌ Skipping angle update - Difference too small: \(abs(context.coordinator.lastAppliedStartAngle - self.rotation)) lastApplied: \(context.coordinator.lastAppliedStartAngle), self.startAngle: \(self.rotation)")
+            print("DEBUG: ❌ Skipping angle update - Difference too small: \(abs(context.coordinator.lastAppliedStartAngle - self.rotation.toRadians())) lastApplied: \(context.coordinator.lastAppliedStartAngle), self.startAngle: \(self.rotation.toRadians())")
         }
         
 		switch self.progressiveImage {
-		case let .loading(_, image, id):
+		case let .loading(_, image, id, angle):
 			if let image, image != uiView.image, uiView.isTransitioningImage == false {
 				let animation: CTPanoramaView.AnimateOption = context.coordinator.id == id ? .none : .fade(duration: 0.5)
-				uiView.transition(to: image, animation: animation)
+				uiView.transition(to: image, startAngle: angle, animation: animation)
 			}
-		case let .finished(image, id):
+		case let .finished(image, id, angle):
 			let animation: CTPanoramaView.AnimateOption = context.coordinator.id == id ? .none : .fade(duration: 0.5)
-			uiView.transition(to: image, animation: animation)
+			uiView.transition(to: image, startAngle: angle, animation: animation)
 		case .none:
 			break
 		}
+    }
+}
+
+extension FloatingPoint {
+
+    func toDegrees() -> Self {
+        return self * 180 / .pi
+    }
+
+    func toRadians() -> Self {
+        return self * .pi / 180
     }
 }
