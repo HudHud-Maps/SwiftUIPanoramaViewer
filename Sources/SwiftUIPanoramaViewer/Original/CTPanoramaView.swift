@@ -48,7 +48,7 @@ import ImageIO
     @objc public var tapHandler: ((Float) -> Void)?
 
 	@objc public var panSpeed = CGPoint(x: 0.4, y: 0.4)
-	@objc public var startAngle: Float = 0
+    @objc public var startAngle: Float = .pi
 	@objc public var rotationHandler: ((_ rotationKey: Float) -> Void)?
 
 	@objc public var angleOffset: Float = 0 {
@@ -207,12 +207,12 @@ import ImageIO
 		self.reportMovement(CGFloat(startAngle), xFov.toRadians(), callHandler: false)
 	}
 
-	public func transition(to image: UIImage, animation: AnimateOption = .fade(duration: 0.5), completion: (()->Void)? = nil) {
+    public func transition(to image: UIImage, angle: Float, animation: AnimateOption = .fade(duration: 0.5), completion: (()->Void)? = nil) {
 		self.isTransitioningImage = true
         self.temporaryGeometryNodes.last?.removeAllActions()
 		self.geometryNode?.removeAllActions()
 
-		let newNode = self.createGeometryNode(for: image)
+        let newNode = self.createGeometryNode(for: image, angle: angle)
 		self.scene.rootNode.addChildNode(newNode)
         self.temporaryGeometryNodes.insert(newNode, at: 0)
 
@@ -277,7 +277,7 @@ private extension CTPanoramaView {
 
 	// MARK: Configuration helper methods
 
-	func createGeometryNode(for image: UIImage) -> SCNNode {
+    func createGeometryNode(for image: UIImage, angle: Float) -> SCNNode {
 		let material = SCNMaterial()
 		material.diffuse.contents = image
 		material.diffuse.mipFilter = .nearest
@@ -293,7 +293,7 @@ private extension CTPanoramaView {
 
 			let sphereNode = SCNNode()
 			sphereNode.geometry = sphere
-			sphereNode.rotation = SCNQuaternion(0, 1, 0, angleOffset)
+			sphereNode.rotation = SCNQuaternion(0, 1, 0, angle)
 			return sphereNode
 		} else {
 			let tube = SCNTube(innerRadius: radius, outerRadius: radius, height: fovHeight)
@@ -303,7 +303,7 @@ private extension CTPanoramaView {
 
 			let tubeNode = SCNNode()
 			tubeNode.geometry = tube
-			tubeNode.rotation  = SCNQuaternion(0, 1, 0, angleOffset)
+			tubeNode.rotation  = SCNQuaternion(0, 1, 0, angle)
 			return tubeNode
 		}
 	}
@@ -633,16 +633,6 @@ private extension UIView {
 		let vConstraints = NSLayoutConstraint.constraints(withVisualFormat: "V:|[view]|", options: [], metrics: nil, views: views)
 		self.addConstraints(hConstraints)
 		self.addConstraints(vConstraints)
-	}
-}
-
-private extension FloatingPoint {
-	func toDegrees() -> Self {
-		return self * 180 / .pi
-	}
-
-	func toRadians() -> Self {
-		return self * .pi / 180
 	}
 }
 
