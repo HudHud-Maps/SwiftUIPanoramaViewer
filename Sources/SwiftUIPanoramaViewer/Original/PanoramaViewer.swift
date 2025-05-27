@@ -76,9 +76,6 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
     /// The `UIImage` being displayed in the `PanoramaViewer`.
 	@Binding public var progressiveImage: ProgressiveImage?
 
-    /// The type of panorama image being displayed.
-    public var panoramaType: CTPanoramaType = .spherical
-    
     /// The type of user interaction that the `PanoramaViewer` supports.
     public var controlMethod: CTPanoramaControlMethod = .touch
 
@@ -102,9 +99,8 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
     ///   - backgroundColor: The viewer background color.
     ///   - rotationHandler: Handle the panorama being rotated.
     ///   - cameraMoved: Handles the panorama camera being moved and returns the new Pitch, Yaw and Rotation.
-	public init(progressiveImage: Binding<ProgressiveImage?>, panoramaType: CTPanoramaType = .spherical, controlMethod: CTPanoramaControlMethod = .touch, backgroundColor:UIColor = .black, rotationHandler: ((_ rotationKey: Float) -> Void)? = nil, cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)? = nil, tapHandler: ((Float) -> Void)? = nil) {
+	public init(progressiveImage: Binding<ProgressiveImage?>, controlMethod: CTPanoramaControlMethod = .touch, backgroundColor:UIColor = .black, rotationHandler: ((_ rotationKey: Float) -> Void)? = nil, cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)? = nil, tapHandler: ((Float) -> Void)? = nil) {
         self._progressiveImage = progressiveImage
-        self.panoramaType = panoramaType
         self.controlMethod = controlMethod
         self.backgroundColor = backgroundColor
         self.rotationHandler = rotationHandler
@@ -126,14 +122,15 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
         if let image = self.progressiveImage?.image {
             view.transition(to: image, angle: self.progressiveImage?.angle.toRadians() ?? 0, animation: .none)
 		}
-
-        // Save reference to connect to compass view
-        PanoramaManager.lastPanoramaViewer = view
         
         // Return viewer
         return view
     }
-    
+
+    public static func dismantleUIView(_ uiView: CTPanoramaView, coordinator: Coordinator) {
+        uiView.cleanup()
+    }
+
     /// Handles the `PanoramaViewer` being updated.
     /// - Parameters:
     ///   - uiView: The `PanoramaViewer` that is updating.
@@ -143,11 +140,11 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
 		case let .loading(_, image, id, angle):
 			if let image, image != uiView.image, uiView.isTransitioningImage == false {
 				let animation: CTPanoramaView.AnimateOption = context.coordinator.id == id ? .none : .fade(duration: 0.5)
-                uiView.transition(to: image, angle: angle.toRadians(), animation: animation)
+                uiView.transition(to: image, angle: angle.toRadians(), animation: animation, description: String(describing: id))
 			}
 		case let .finished(image, id, angle):
-			let animation: CTPanoramaView.AnimateOption = context.coordinator.id == id ? .none : .fade(duration: 0.5)
-            uiView.transition(to: image, angle: angle.toRadians(), animation: animation)
+            let animation: CTPanoramaView.AnimateOption = context.coordinator.id == id ? .none : .fade(duration: 0.5)
+            uiView.transition(to: image, angle: angle.toRadians(), animation: animation, description: String(describing: id))
 		case .none:
 			break
 		}

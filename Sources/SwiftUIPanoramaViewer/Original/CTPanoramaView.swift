@@ -10,21 +10,13 @@ import UIKit
 import SceneKit
 import CoreMotion
 import ImageIO
-
-@MainActor
-@objc public protocol CTPanoramaCompass {
-	func updateUI(rotationAngle: CGFloat, fieldOfViewAngle: CGFloat)
-}
+import OSLog
+import SpriteKit
 
 @objc public enum CTPanoramaControlMethod: Int {
 	case motion
 	case touch
 	case both
-}
-
-@objc public enum CTPanoramaType: Int {
-	case cylindrical
-	case spherical
 }
 
 @objc public enum CTNavigationDirection: Int, CaseIterable {
@@ -43,7 +35,6 @@ import ImageIO
 
 	// MARK: Public properties
 
-	@objc public var compass: CTPanoramaCompass?
 	@objc public var movementHandler: ((_ rotationAngle: CGFloat, _ fieldOfViewAngle: CGFloat) -> Void)?
     @objc public var tapHandler: ((Float) -> Void)?
 
@@ -70,16 +61,13 @@ import ImageIO
 	@objc public var maxFoV: CGFloat = 100
 
 	private(set) var image: UIImage?
-	private(set) var isTransitioningImage: Bool = false
+    private(set) var isTransitioningImage: Bool = false
+	private(set) var currentTransition: SCNAction?
 
 	@objc public var overlayView: UIView? {
 		didSet {
 			replace(overlayView: oldValue, with: overlayView)
 		}
-	}
-
-	@objc public var panoramaType: CTPanoramaType {
-		return (geometryNode?.geometry is SCNSphere) ? .spherical : .cylindrical
 	}
 
 	@objc public var controlMethod: CTPanoramaControlMethod = .touch {
@@ -104,11 +92,14 @@ import ImageIO
 	private let sceneView = SCNView()
 	private let scene = SCNScene()
 	private let motionManager = CMMotionManager()
-	private var geometryNode: SCNNode?
-	private var temporaryGeometryNodes: [SCNNode] = []
+	private var geometryNode: Node?
+	private var temporaryGeometryNodes: [Node] = []
 	private var prevLocation = CGPoint.zero
 	private var prevRotation = CGFloat.zero
 	private var prevBounds = CGRect.zero
+
+    private var signpostID: OSSignpostID!
+    private var signpostState: OSSignpostIntervalState!
 
 	// Parameters used by the .both method
 	private var totalX = Float.zero
@@ -116,8 +107,8 @@ import ImageIO
 
 	private var motionPaused = false
 
-	private lazy var cameraNode: SCNNode = {
-		let node = SCNNode()
+	private lazy var cameraNode: Node = {
+        let node = Node(role: .camera)
 		let camera = SCNCamera()
 		node.camera = camera
 		return node
@@ -144,15 +135,15 @@ import ImageIO
 			return cameraNode.camera?.fieldOfView ?? 0
 		}
 		set {
-			cameraNode.camera?.fieldOfView = newValue
+            self.cameraNode.camera?.fieldOfView = newValue
 		}
 	}
     
-    private var horizontalFieldOfView: CGFloat {
+    private var horizontalFieldOfView: Float {
         let verticalFieldOfViewInRadians = (cameraNode.camera?.fieldOfView ?? 0) * .pi / 180
         let aspectRatio = bounds.width / bounds.height
         let horizontalFieldOfViewInRadians = 2 * atan(tan(verticalFieldOfViewInRadians / 2) * aspectRatio)
-        return horizontalFieldOfViewInRadians * 180 / .pi
+        return Float(horizontalFieldOfViewInRadians * 180 / .pi)
     }
 
 	// MARK: Class lifecycle methods
@@ -174,6 +165,9 @@ import ImageIO
 	}
 
 	deinit {
+        Logger.panoramaViewer.notice("CTPanoramaView deinit")
+        OSSignposter.renderer.endInterval("CTPanoramaView Lifecycle", self.signpostState, "deinit")
+
 		if motionManager.isDeviceMotionActive {
 			motionManager.stopDeviceMotionUpdates()
 		}
@@ -207,8 +201,12 @@ import ImageIO
 		self.reportMovement(CGFloat(startAngle), xFov.toRadians(), callHandler: false)
 	}
 
-    public func transition(to image: UIImage, angle: Float, animation: AnimateOption = .fade(duration: 0.5), completion: (()->Void)? = nil) {
+    public func transition(to image: UIImage, angle: Float, animation: AnimateOption = .fade(duration: 0.5), description: String? = nil, completion: (()->Void)? = nil) {
+        Logger.panoramaViewer.notice("transition to image \(description ?? "<nil>)")")
+        let signpostID = OSSignposter.scene.makeSignpostID(from: image)
+        let signpostState = OSSignposter.transition.beginInterval("Transition to Image", id: signpostID, "\(description ?? "<nil>)")")
 		self.isTransitioningImage = true
+
         self.temporaryGeometryNodes.last?.removeAllActions()
 		self.geometryNode?.removeAllActions()
 
@@ -224,27 +222,36 @@ import ImageIO
                 _ = self.temporaryGeometryNodes.popLast()
 				self.image = image
 				self.isTransitioningImage = false
+                self.sceneView.accessibilityIdentifier = description
 				completion?()
 			case .fade(let duration):
 				self.geometryNode?.runAction(SCNAction.fadeOut(duration: duration))
-				newNode.runAction(SCNAction.fadeIn(duration: duration)) {
-					self.geometryNode?.removeFromParentNode()
-					self.geometryNode = newNode
+                let currentTransition = SCNAction.fadeIn(duration: duration)
+                defer {
+                    self.currentTransition = currentTransition
+                }
+                newNode.runAction(currentTransition) {
+                    self.geometryNode?.removeFromParentNode()
+                    self.geometryNode = newNode
+                    self.geometryNode?.change(role: .persistent)
                     _ = self.temporaryGeometryNodes.popLast()
-					DispatchQueue.main.async {
-						self.image = image
-						self.isTransitioningImage = false
-						completion?()
-					}
-				}
+                    OSSignposter.transition.endInterval("Transition to Image", signpostState)
+                    DispatchQueue.main.async {
+                        self.image = image
+                        self.isTransitioningImage = false
+                        self.sceneView.accessibilityIdentifier = description
+                        Logger.panoramaViewer.notice("transition complete \(description ?? "<nil>")")
+                        completion?()
+                    }
+                }
 			}
 		}
 	}
 
-	public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+	public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {      
 		guard let touchLocation = touches.first?.location(in: sceneView) else { return }
 
-		print(touchLocation)
+        Logger.panoramaViewer.info("touch ended: \(touchLocation.debugDescription)")
         let tapIndicator = TapIndicator()
 		self.addSubview(tapIndicator)
 		tapIndicator.animateCircles(center: touchLocation)
@@ -254,10 +261,20 @@ import ImageIO
         ).first?.localCoordinates {
             let widthPercentage = 0.5 + (atan2(localSphereCoordinates.z, localSphereCoordinates.x) / (2 * .pi))
             let angle = ((widthPercentage * 360) + 90).truncatingRemainder(dividingBy: 360) // the image starts before 90 degrees, so we add it back
-            print("angle is: \(angle)")
+            Logger.panoramaViewer.notice("angle is: \(angle)")
             tapHandler?(Float(angle))
         }
 	}
+
+    public func cleanup() {
+        self.scene.rootNode.enumerateChildNodes { node, _ in
+            node.removeAllAnimations()
+            node.removeAllActions()
+            node.removeFromParentNode()
+        }
+
+        self.sceneView.scene = nil
+    }
 }
 
 // MARK: - Private
@@ -265,19 +282,24 @@ import ImageIO
 private extension CTPanoramaView {
 
 	func commonInit() {
-		add(view: sceneView)
+        self.signpostID = OSSignposter.renderer.makeSignpostID(from: self)
+        Logger.panoramaViewer.notice("CTPanoramaView init")
+        self.signpostState = OSSignposter.renderer.beginInterval("CTPanoramaView Lifecycle", id: self.signpostID, "init")
 
-		scene.rootNode.addChildNode(cameraNode)
+        self.add(view: self.sceneView)
 
-		sceneView.scene = scene
-		sceneView.backgroundColor = self.backgroundColor
+        self.scene.rootNode.addChildNode(self.cameraNode)
 
-		switchControlMethod(to: controlMethod)
+        self.sceneView.scene = scene
+        self.sceneView.backgroundColor = self.backgroundColor
+        self.sceneView.accessibilityTraits = .image
+
+        self.switchControlMethod(to: self.controlMethod)
 	}
 
 	// MARK: Configuration helper methods
 
-    func createGeometryNode(for image: UIImage, angle: Float) -> SCNNode {
+    func createGeometryNode(for image: UIImage, angle: Float) -> Node {
 		let material = SCNMaterial()
 		material.diffuse.contents = image
 		material.diffuse.mipFilter = .nearest
@@ -286,26 +308,14 @@ private extension CTPanoramaView {
 		material.diffuse.wrapS = .repeat
 		material.cullMode = .front
 
-		if image.panoramaType == .spherical {
-			let sphere = SCNSphere(radius: radius)
-			sphere.segmentCount = 360
-			sphere.firstMaterial = material
+        let sphere = SCNSphere(radius: radius)
+        sphere.segmentCount = 360
+        sphere.firstMaterial = material
 
-			let sphereNode = SCNNode()
-			sphereNode.geometry = sphere
-			sphereNode.rotation = SCNQuaternion(0, 1, 0, angle)
-			return sphereNode
-		} else {
-			let tube = SCNTube(innerRadius: radius, outerRadius: radius, height: fovHeight)
-			tube.heightSegmentCount = 50
-			tube.radialSegmentCount = 360
-			tube.firstMaterial = material
-
-			let tubeNode = SCNNode()
-			tubeNode.geometry = tube
-			tubeNode.rotation  = SCNQuaternion(0, 1, 0, angle)
-			return tubeNode
-		}
+        let sphereNode = Node(role: .new)
+        sphereNode.geometry = sphere
+        sphereNode.rotation = SCNQuaternion(0, 1, 0, angle)
+        return sphereNode
 	}
 
 	func replace(overlayView: UIView?, with newOverlayView: UIView?) {
@@ -327,55 +337,36 @@ private extension CTPanoramaView {
 			guard (panoramaView.controlMethod == .motion || panoramaView.controlMethod == .both) else {return}
 
 			guard let motionData = motionData else {
-				print("\(String(describing: error?.localizedDescription))")
+                Logger.panoramaViewer.error("\(String(describing: error?.localizedDescription))")
 				panoramaView.motionManager.stopDeviceMotionUpdates()
 				return
 			}
 
 
-			DispatchQueue.main.async {
-				if panoramaView.panoramaType == .cylindrical {
+            DispatchQueue.main.async {
+                // Use quaternions when in spherical mode to prevent gimbal lock
 
-					let rotationMatrix = motionData.attitude.rotationMatrix
-					var userHeading = .pi - atan2(rotationMatrix.m32, rotationMatrix.m31)
-					userHeading += .pi/2
+                var orientation = motionData.orientation()
 
-					var startAngle = panoramaView.startAngle
+                // Represent the orientation as a GLKQuaternion
+                if(panoramaView.controlMethod == .both){
 
-					if (panoramaView.controlMethod == .both) {
-						startAngle += panoramaView.totalY
-					}
-					// Prevent vertical movement in a cylindrical panorama
-					panoramaView.cameraNode.eulerAngles = SCNVector3Make(0, startAngle + Float(-userHeading), 0)
+                    // same code as pan rotation
+                    // but with our total accumulated
+                    // movements
 
-				} else {
-					// Use quaternions when in spherical mode to prevent gimbal lock
+                    var glQuaternion = GLKQuaternionMake(orientation.x, orientation.y, orientation.z, orientation.w)
 
-					var orientation = motionData.orientation()
+                    let xMultiplier = GLKQuaternionMakeWithAngleAndAxis(panoramaView.totalX, 1, 0, 0)
+                    glQuaternion = GLKQuaternionMultiply(glQuaternion, xMultiplier)
 
-					// Represent the orientation as a GLKQuaternion
-					if(panoramaView.controlMethod == .both){
+                    let yMultiplier = GLKQuaternionMakeWithAngleAndAxis(panoramaView.totalY, 0, 1, 0)
+                    glQuaternion = GLKQuaternionMultiply(yMultiplier, glQuaternion)
 
-						// same code as pan rotation
-						// but with our total accumulated
-						// movements
+                    orientation = SCNQuaternion(x: glQuaternion.x, y: glQuaternion.y, z: glQuaternion.z, w: glQuaternion.w)
 
-						var glQuaternion = GLKQuaternionMake(orientation.x, orientation.y, orientation.z, orientation.w)
-
-						let xMultiplier = GLKQuaternionMakeWithAngleAndAxis(panoramaView.totalX, 1, 0, 0)
-						glQuaternion = GLKQuaternionMultiply(glQuaternion, xMultiplier)
-
-						let yMultiplier = GLKQuaternionMakeWithAngleAndAxis(panoramaView.totalY, 0, 1, 0)
-						glQuaternion = GLKQuaternionMultiply(yMultiplier, glQuaternion)
-
-						orientation = SCNQuaternion(x: glQuaternion.x, y: glQuaternion.y, z: glQuaternion.z, w: glQuaternion.w)
-
-					}
-
-					panoramaView.cameraNode.orientation = orientation
-
-				}
-
+                }
+                panoramaView.cameraNode.orientation = orientation
 				panoramaView.reportMovement(CGFloat(-panoramaView.cameraNode.eulerAngles.y), panoramaView.xFov.toRadians())
 			}
 		})
@@ -423,21 +414,12 @@ private extension CTPanoramaView {
 	}
 
 	func reportMovement(_ rotationAngle: CGFloat, _ fieldOfViewAngle: CGFloat, callHandler: Bool = true) {
-		compass?.updateUI(rotationAngle: rotationAngle, fieldOfViewAngle: fieldOfViewAngle)
 		if callHandler {
 			movementHandler?(rotationAngle, fieldOfViewAngle)
 		}
 
 		if let rotationHandler = rotationHandler {
-			// HACK: Create a unique "key" value for rotation to key events off of.
-
-			let a = rotationAngle.toDegrees()
-			let b = (cameraNode.rotation.y * cameraNode.orientation.y).toDegrees()
-			//let resolution = Float(5.0)
-			let s = "\(Int(a * 0.50))\(Int(b * 0.70))"
-			let k = Int(s)!
 			rotationHandler(Float(rotationAngle))
-			PanoramaManager.lastRotationKey = k
 		}
 	}
 
@@ -448,19 +430,12 @@ private extension CTPanoramaView {
 			prevLocation = CGPoint.zero
 
 		} else if panRec.state == .changed {
-
-			var modifiedPanSpeed = panSpeed
-
-			if (panoramaType == .cylindrical) {
-				modifiedPanSpeed.y = 0 // Prevent vertical movement in a cylindrical panorama
-			}
-
 			let orientation = cameraNode.orientation
 			let location = panRec.translation(in: sceneView)
 
 			let translationDelta = CGPoint(
-				x: (location.x - prevLocation.x) * modifiedPanSpeed.x,
-				y: (location.y - prevLocation.y) * modifiedPanSpeed.y
+				x: (location.x - prevLocation.x) * panSpeed.x,
+				y: (location.y - prevLocation.y) * panSpeed.y
 			)
 
 			// Accumulate these if wheb using .both method so that we can apply the rotations
@@ -528,12 +503,6 @@ private extension CTPanoramaView {
 	}
 
 	@objc func handleRotate(rotRec: UIRotationGestureRecognizer) {
-
-		// no rotation for cylindrical
-		if panoramaType == .cylindrical{
-			return
-		}
-
 		if rotRec.state == .began {
 			prevRotation = CGFloat.zero
 
@@ -578,7 +547,12 @@ private extension CMDeviceMotion {
 
 		let result: SCNVector4
 
-		switch UIApplication.shared.statusBarOrientation {
+        let orientation = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive })?
+            .interfaceOrientation
+
+		switch orientation ?? .portrait {
 
 		case .landscapeRight:
 			let cq1 = GLKQuaternionMakeWithAngleAndAxis(.pi/2, 0, 1, 0)
@@ -611,16 +585,6 @@ private extension CMDeviceMotion {
 			result = quanternionMultiplier.vector(for: .portrait)
 		}
 		return result
-	}
-}
-
-private extension UIImage {
-
-	var panoramaType: CTPanoramaType {
-		if self.size.width / self.size.height == 2 {
-			return .spherical
-		}
-		return .cylindrical
 	}
 }
 
