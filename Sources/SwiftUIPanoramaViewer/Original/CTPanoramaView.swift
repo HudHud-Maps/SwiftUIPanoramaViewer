@@ -19,13 +19,6 @@ import SpriteKit
 	case both
 }
 
-@objc public enum CTNavigationDirection: Int, CaseIterable {
-	case north
-	case east
-	case south
-	case west
-}
-
 @objc public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
 	public enum AnimateOption {
@@ -44,7 +37,7 @@ import SpriteKit
 
 	@objc public var angleOffset: Float = 0 {
 		didSet {
-			geometryNode?.rotation = SCNQuaternion(0, 1, 0, angleOffset)
+			geometryNode.rotation = SCNQuaternion(0, 1, 0, angleOffset)
 		}
 	}
 
@@ -63,12 +56,6 @@ import SpriteKit
 	private(set) var image: UIImage?
     private(set) var isTransitioningImage: Bool = false
 	private(set) var currentTransition: SCNAction?
-
-	@objc public var overlayView: UIView? {
-		didSet {
-			replace(overlayView: oldValue, with: overlayView)
-		}
-	}
 
 	@objc public var controlMethod: CTPanoramaControlMethod = .touch {
 		didSet {
@@ -92,7 +79,7 @@ import SpriteKit
 	private let sceneView = SCNView()
 	private let scene = SCNScene()
 	private let motionManager = CMMotionManager()
-	private var geometryNode: Node?
+	private var geometryNode: Node!
 	private var temporaryGeometryNodes: [Node] = []
 	private var prevLocation = CGPoint.zero
 	private var prevRotation = CGFloat.zero
@@ -207,45 +194,91 @@ import SpriteKit
         let signpostState = OSSignposter.transition.beginInterval("Transition to Image", id: signpostID, "\(description ?? "<nil>)")")
 		self.isTransitioningImage = true
 
-        self.temporaryGeometryNodes.last?.removeAllActions()
-		self.geometryNode?.removeAllActions()
+        let oldValue = geometryNode.geometry?.firstMaterial?.value(forKey: "newTexture")
 
-        let newNode = self.createGeometryNode(for: image, angle: angle)
-		self.scene.rootNode.addChildNode(newNode)
-        self.temporaryGeometryNodes.insert(newNode, at: 0)
+        let material = SCNMaterial()
+        material.isDoubleSided = false
+        material.cullMode = .front
 
-		DispatchQueue.main.async {
-			switch animation {
-			case .none:
-				self.geometryNode?.removeFromParentNode()
-				self.geometryNode = newNode
-                _ = self.temporaryGeometryNodes.popLast()
-				self.image = image
-				self.isTransitioningImage = false
-                self.sceneView.accessibilityIdentifier = description
-				completion?()
-			case .fade(let duration):
-				self.geometryNode?.runAction(SCNAction.fadeOut(duration: duration))
-                let currentTransition = SCNAction.fadeIn(duration: duration)
-                defer {
-                    self.currentTransition = currentTransition
-                }
-                newNode.runAction(currentTransition) {
-                    self.geometryNode?.removeFromParentNode()
-                    self.geometryNode = newNode
-                    self.geometryNode?.change(role: .persistent)
-                    _ = self.temporaryGeometryNodes.popLast()
-                    OSSignposter.transition.endInterval("Transition to Image", signpostState)
-                    DispatchQueue.main.async {
-                        self.image = image
-                        self.isTransitioningImage = false
-                        self.sceneView.accessibilityIdentifier = description
-                        Logger.panoramaViewer.notice("transition complete \(description ?? "<nil>")")
-                        completion?()
-                    }
-                }
-			}
-		}
+        // Assign initial values
+        let newProperty = SCNMaterialProperty(contents: image)
+
+        material.setValue(oldValue, forKey: "oldTexture")
+        material.setValue(newProperty, forKey: "newTexture")
+        material.setValue(0.0, forKey: "blendFactor")
+
+        // Shader modifier for texture blending
+        material.shaderModifiers = [
+            .fragment: """
+            uniform sampler2D oldTexture;
+            uniform sampler2D newTexture;
+            uniform float blendFactor;
+
+            vec4 oldColor = texture2D(oldTexture, _surface.diffuseTexcoord);
+            vec4 newColor = texture2D(newTexture, _surface.diffuseTexcoord);
+            _output.color = mix(oldColor, newColor, blendFactor);
+            """
+        ]
+
+        // Assign material to geometry
+        self.geometryNode.geometry?.firstMaterial = material
+
+        // Animate the blend
+        SCNTransaction.begin()
+        SCNTransaction.completionBlock = {
+            OSSignposter.transition.endInterval("Transition to Image", signpostState)
+        }
+
+        switch animation {
+        case .none:
+            SCNTransaction.disableActions = true
+        case .fade(let duration):
+            SCNTransaction.animationDuration = duration
+        }
+
+        material.setValue(1.0, forKey: "blendFactor")
+        SCNTransaction.commit()
+
+
+//        self.temporaryGeometryNodes.last?.removeAllActions()
+//		self.geometryNode?.removeAllActions()
+//
+//        let newNode = self.createGeometryNode(for: image, angle: angle)
+//		self.scene.rootNode.addChildNode(newNode)
+//        self.temporaryGeometryNodes.insert(newNode, at: 0)
+//
+//		DispatchQueue.main.async {
+//			switch animation {
+//			case .none:
+//				self.geometryNode?.removeFromParentNode()
+//				self.geometryNode = newNode
+//                _ = self.temporaryGeometryNodes.popLast()
+//				self.image = image
+//				self.isTransitioningImage = false
+//                self.sceneView.accessibilityIdentifier = description
+//				completion?()
+//			case .fade(let duration):
+//				self.geometryNode?.runAction(SCNAction.fadeOut(duration: duration))
+//                let currentTransition = SCNAction.fadeIn(duration: duration)
+//                defer {
+//                    self.currentTransition = currentTransition
+//                }
+//                newNode.runAction(currentTransition) {
+//                    self.geometryNode?.removeFromParentNode()
+//                    self.geometryNode = newNode
+//                    self.geometryNode?.change(role: .persistent)
+//                    _ = self.temporaryGeometryNodes.popLast()
+//                    OSSignposter.transition.endInterval("Transition to Image", signpostState)
+//                    DispatchQueue.main.async {
+//                        self.image = image
+//                        self.isTransitioningImage = false
+//                        self.sceneView.accessibilityIdentifier = description
+//                        Logger.panoramaViewer.notice("transition complete \(description ?? "<nil>")")
+//                        completion?()
+//                    }
+//                }
+//			}
+//		}
 	}
 
 	public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {      
@@ -290,6 +323,44 @@ private extension CTPanoramaView {
 
         self.scene.rootNode.addChildNode(self.cameraNode)
 
+        let sphere = SCNSphere(radius: radius)
+        sphere.segmentCount = 360
+        let sphereNode = Node(role: .new)
+        sphereNode.geometry = sphere
+
+        let material = SCNMaterial()
+        let size = CGSize(width: 100, height: 50)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        let blackImage = renderer.image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+        }
+
+
+        // Assign initial values
+        let newProperty = SCNMaterialProperty(contents: blackImage)
+
+        material.setValue(newProperty, forKey: "newTexture")
+
+        // Shader modifier for texture blending
+        material.shaderModifiers = [
+            .fragment: """
+            uniform sampler2D newTexture;
+
+            vec4 newColor = texture2D(newTexture, _surface.diffuseTexcoord);
+            _output.color = newColor;
+            """
+        ]
+
+        sphere.firstMaterial = material
+
+        self.geometryNode = sphereNode
+        self.scene.rootNode.addChildNode(sphereNode)
+
+        SCNTransaction.commit()
+
         self.sceneView.scene = scene
         self.sceneView.backgroundColor = self.backgroundColor
         self.sceneView.accessibilityTraits = .image
@@ -316,12 +387,6 @@ private extension CTPanoramaView {
         sphereNode.geometry = sphere
         sphereNode.rotation = SCNQuaternion(0, 1, 0, angle)
         return sphereNode
-	}
-
-	func replace(overlayView: UIView?, with newOverlayView: UIView?) {
-		overlayView?.removeFromSuperview()
-		guard let newOverlayView = newOverlayView else {return}
-		add(view: newOverlayView)
 	}
 
 	func startMotionUpdates(){
@@ -589,6 +654,7 @@ private extension CMDeviceMotion {
 }
 
 private extension UIView {
+
 	func add(view: UIView) {
 		view.translatesAutoresizingMaskIntoConstraints = false
 		addSubview(view)
@@ -601,6 +667,7 @@ private extension UIView {
 }
 
 private extension GLKQuaternion {
+
 	init(quanternion: CMQuaternion) {
 		self.init(q: (Float(quanternion.x), Float(quanternion.y), Float(quanternion.z), Float(quanternion.w)))
 	}
