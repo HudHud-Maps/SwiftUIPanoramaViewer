@@ -9,6 +9,7 @@
 
 import Foundation
 import SwiftUI
+import OSLog
 import UIKit
 
 /// The `PanoramaViewer` allows you to display an interactive panorama viewer in a SwiftUI `View`.
@@ -128,6 +129,7 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
     }
 
     public static func dismantleUIView(_ uiView: CTPanoramaView, coordinator: Coordinator) {
+        Logger.panoramaViewer.notice("CTPanoramaView cleanup")
         uiView.cleanup()
     }
 
@@ -138,7 +140,7 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
     public func updateUIView(_ uiView: UIViewType, context: Context) {
 		switch self.progressiveImage {
 		case let .loading(_, image, id, angle):
-			if let image, image != uiView.image, uiView.isTransitioningImage == false {
+			if let image, image != uiView.image {
 				let animation: CTPanoramaView.AnimateOption = context.coordinator.id == id ? .none : .fade(duration: 0.5)
                 uiView.transition(to: image, angle: angle.toRadians(), animation: animation, description: String(describing: id))
 			}

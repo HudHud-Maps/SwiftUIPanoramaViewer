@@ -13,13 +13,13 @@ import ImageIO
 import OSLog
 import SpriteKit
 
-@objc public enum CTPanoramaControlMethod: Int {
+public enum CTPanoramaControlMethod: Int {
 	case motion
 	case touch
 	case both
 }
 
-@objc public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
+public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
 	public enum AnimateOption {
 		case none
@@ -28,20 +28,20 @@ import SpriteKit
 
 	// MARK: Public properties
 
-	@objc public var movementHandler: ((_ rotationAngle: CGFloat, _ fieldOfViewAngle: CGFloat) -> Void)?
-    @objc public var tapHandler: ((Float) -> Void)?
+	public var movementHandler: ((_ rotationAngle: CGFloat, _ fieldOfViewAngle: CGFloat) -> Void)?
+    public var tapHandler: ((Float) -> Void)?
 
-	@objc public var panSpeed = CGPoint(x: 0.4, y: 0.4)
-    @objc public var startAngle: Float = .pi
-	@objc public var rotationHandler: ((_ rotationKey: Float) -> Void)?
+	public var panSpeed = CGPoint(x: 0.4, y: 0.4)
+    public var startAngle: Float = .pi
+	public var rotationHandler: ((_ rotationKey: Float) -> Void)?
 
-	@objc public var angleOffset: Float = 0 {
+	public var angleOffset: Float = 0 {
 		didSet {
 			geometryNode.rotation = SCNQuaternion(0, 1, 0, angleOffset)
 		}
 	}
 
-	@objc public var cameraAngle: CGFloat {
+	public var cameraAngle: CGFloat {
 		let quaternion = self.cameraNode.orientation
 		// Convert quaternion to Euler angles (in radians)
 		let yaw = atan2(2 * (quaternion.y * quaternion.w - quaternion.x * quaternion.z),
@@ -50,14 +50,13 @@ import SpriteKit
 		return CGFloat(-yaw)
 	}
 
-	@objc public var minFoV: CGFloat = 40
-	@objc public var maxFoV: CGFloat = 100
+	public var minFoV: CGFloat = 40
+	public var maxFoV: CGFloat = 120
 
 	private(set) var image: UIImage?
-    private(set) var isTransitioningImage: Bool = false
 	private(set) var currentTransition: SCNAction?
 
-	@objc public var controlMethod: CTPanoramaControlMethod = .touch {
+	public var controlMethod: CTPanoramaControlMethod = .touch {
 		didSet {
 			switchControlMethod(to: controlMethod)
 			resetCameraAngles();
@@ -181,18 +180,17 @@ import SpriteKit
 	// MARK: Public methods
 
 	public func resetCameraAngles() {
-		yFov = maxFoV
-		cameraNode.eulerAngles = SCNVector3Make(0, startAngle, 0)
-		totalX = Float.zero
-		totalY = Float.zero
-		self.reportMovement(CGFloat(startAngle), xFov.toRadians(), callHandler: false)
+        self.yFov = 60
+        self.cameraNode.eulerAngles = SCNVector3Make(0, self.startAngle, 0)
+        self.totalX = Float.zero
+        self.totalY = Float.zero
+        self.reportMovement(CGFloat(self.startAngle), self.xFov.toRadians(), callHandler: false)
 	}
 
     public func transition(to image: UIImage, angle: Float, animation: AnimateOption = .fade(duration: 0.5), description: String? = nil, completion: (()->Void)? = nil) {
         Logger.panoramaViewer.notice("transition to image \(description ?? "<nil>)")")
         let signpostID = OSSignposter.scene.makeSignpostID(from: image)
         let signpostState = OSSignposter.transition.beginInterval("Transition to Image", id: signpostID, "\(description ?? "<nil>)")")
-		self.isTransitioningImage = true
 
         let oldValue = geometryNode.geometry?.firstMaterial?.value(forKey: "newTexture")
 
@@ -227,6 +225,7 @@ import SpriteKit
         SCNTransaction.begin()
         SCNTransaction.completionBlock = {
             OSSignposter.transition.endInterval("Transition to Image", signpostState)
+            self.geometryNode.accessibilityLabel = description
         }
 
         switch animation {
@@ -238,47 +237,6 @@ import SpriteKit
 
         material.setValue(1.0, forKey: "blendFactor")
         SCNTransaction.commit()
-
-
-//        self.temporaryGeometryNodes.last?.removeAllActions()
-//		self.geometryNode?.removeAllActions()
-//
-//        let newNode = self.createGeometryNode(for: image, angle: angle)
-//		self.scene.rootNode.addChildNode(newNode)
-//        self.temporaryGeometryNodes.insert(newNode, at: 0)
-//
-//		DispatchQueue.main.async {
-//			switch animation {
-//			case .none:
-//				self.geometryNode?.removeFromParentNode()
-//				self.geometryNode = newNode
-//                _ = self.temporaryGeometryNodes.popLast()
-//				self.image = image
-//				self.isTransitioningImage = false
-//                self.sceneView.accessibilityIdentifier = description
-//				completion?()
-//			case .fade(let duration):
-//				self.geometryNode?.runAction(SCNAction.fadeOut(duration: duration))
-//                let currentTransition = SCNAction.fadeIn(duration: duration)
-//                defer {
-//                    self.currentTransition = currentTransition
-//                }
-//                newNode.runAction(currentTransition) {
-//                    self.geometryNode?.removeFromParentNode()
-//                    self.geometryNode = newNode
-//                    self.geometryNode?.change(role: .persistent)
-//                    _ = self.temporaryGeometryNodes.popLast()
-//                    OSSignposter.transition.endInterval("Transition to Image", signpostState)
-//                    DispatchQueue.main.async {
-//                        self.image = image
-//                        self.isTransitioningImage = false
-//                        self.sceneView.accessibilityIdentifier = description
-//                        Logger.panoramaViewer.notice("transition complete \(description ?? "<nil>")")
-//                        completion?()
-//                    }
-//                }
-//			}
-//		}
 	}
 
 	public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {      
@@ -322,72 +280,27 @@ private extension CTPanoramaView {
         self.add(view: self.sceneView)
 
         self.scene.rootNode.addChildNode(self.cameraNode)
-
-        let sphere = SCNSphere(radius: radius)
-        sphere.segmentCount = 360
-        let sphereNode = Node(role: .new)
-        sphereNode.geometry = sphere
-
-        let material = SCNMaterial()
-        let size = CGSize(width: 100, height: 50)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        let blackImage = renderer.image { context in
-            UIColor.black.setFill()
-            context.fill(CGRect(origin: .zero, size: size))
-        }
-
-
-        // Assign initial values
-        let newProperty = SCNMaterialProperty(contents: blackImage)
-
-        material.setValue(newProperty, forKey: "newTexture")
-
-        // Shader modifier for texture blending
-        material.shaderModifiers = [
-            .fragment: """
-            uniform sampler2D newTexture;
-
-            vec4 newColor = texture2D(newTexture, _surface.diffuseTexcoord);
-            _output.color = newColor;
-            """
-        ]
-
-        sphere.firstMaterial = material
-
-        self.geometryNode = sphereNode
-        self.scene.rootNode.addChildNode(sphereNode)
-
-        SCNTransaction.commit()
-
-        self.sceneView.scene = scene
+        self.sceneView.scene = self.scene
         self.sceneView.backgroundColor = self.backgroundColor
         self.sceneView.accessibilityTraits = .image
+
+        let sphere = SCNSphere(radius: self.radius)
+        sphere.segmentCount = 360
+        self.geometryNode = Node(role: .new)
+        self.geometryNode.geometry = sphere
+        self.scene.rootNode.addChildNode(self.geometryNode)
+
+        let image = UIColor.black.render(in: CGSize(width: 100, height: 50))
+        let newProperty = SCNMaterialProperty(contents: image)
+
+        let material = SCNMaterial()
+        material.setValue(newProperty, forKey: "newTexture")
+        sphere.firstMaterial = material
 
         self.switchControlMethod(to: self.controlMethod)
 	}
 
 	// MARK: Configuration helper methods
-
-    func createGeometryNode(for image: UIImage, angle: Float) -> Node {
-		let material = SCNMaterial()
-		material.diffuse.contents = image
-		material.diffuse.mipFilter = .nearest
-		material.diffuse.magnificationFilter = .nearest
-		material.diffuse.contentsTransform = SCNMatrix4MakeScale(-1, 1, 1)
-		material.diffuse.wrapS = .repeat
-		material.cullMode = .front
-
-        let sphere = SCNSphere(radius: radius)
-        sphere.segmentCount = 360
-        sphere.firstMaterial = material
-
-        let sphereNode = Node(role: .new)
-        sphereNode.geometry = sphere
-        sphereNode.rotation = SCNQuaternion(0, 1, 0, angle)
-        return sphereNode
-	}
 
 	func startMotionUpdates(){
 		guard motionManager.isDeviceMotionAvailable else {return}
@@ -601,92 +514,3 @@ private extension CTPanoramaView {
 		}
 	}
 }
-
-@MainActor
-private extension CMDeviceMotion {
-
-	func orientation() -> SCNVector4 {
-
-		let attitude = self.attitude.quaternion
-		let attitudeQuanternion = GLKQuaternion(quanternion: attitude)
-
-		let result: SCNVector4
-
-        let orientation = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first(where: { $0.activationState == .foregroundActive })?
-            .interfaceOrientation
-
-		switch orientation ?? .portrait {
-
-		case .landscapeRight:
-			let cq1 = GLKQuaternionMakeWithAngleAndAxis(.pi/2, 0, 1, 0)
-			let cq2 = GLKQuaternionMakeWithAngleAndAxis(-(.pi/2), 1, 0, 0)
-			var quanternionMultiplier = GLKQuaternionMultiply(cq1, attitudeQuanternion)
-			quanternionMultiplier = GLKQuaternionMultiply(cq2, quanternionMultiplier)
-
-			result = quanternionMultiplier.vector(for: .landscapeRight)
-
-		case .landscapeLeft:
-			let cq1 = GLKQuaternionMakeWithAngleAndAxis(-(.pi/2), 0, 1, 0)
-			let cq2 = GLKQuaternionMakeWithAngleAndAxis(-(.pi/2), 1, 0, 0)
-			var quanternionMultiplier = GLKQuaternionMultiply(cq1, attitudeQuanternion)
-			quanternionMultiplier = GLKQuaternionMultiply(cq2, quanternionMultiplier)
-
-			result = quanternionMultiplier.vector(for: .landscapeLeft)
-
-		case .portraitUpsideDown:
-			let cq1 = GLKQuaternionMakeWithAngleAndAxis(-(.pi/2), 1, 0, 0)
-			let cq2 = GLKQuaternionMakeWithAngleAndAxis(.pi, 0, 0, 1)
-			var quanternionMultiplier = GLKQuaternionMultiply(cq1, attitudeQuanternion)
-			quanternionMultiplier = GLKQuaternionMultiply(cq2, quanternionMultiplier)
-
-			result = quanternionMultiplier.vector(for: .portraitUpsideDown)
-
-		default:
-			let clockwiseQuanternion = GLKQuaternionMakeWithAngleAndAxis(-(.pi/2), 1, 0, 0)
-			let quanternionMultiplier = GLKQuaternionMultiply(clockwiseQuanternion, attitudeQuanternion)
-
-			result = quanternionMultiplier.vector(for: .portrait)
-		}
-		return result
-	}
-}
-
-private extension UIView {
-
-	func add(view: UIView) {
-		view.translatesAutoresizingMaskIntoConstraints = false
-		addSubview(view)
-		let views = ["view": view]
-		let hConstraints = NSLayoutConstraint.constraints(withVisualFormat: "|[view]|", options: [], metrics: nil, views: views)
-		let vConstraints = NSLayoutConstraint.constraints(withVisualFormat: "V:|[view]|", options: [], metrics: nil, views: views)
-		self.addConstraints(hConstraints)
-		self.addConstraints(vConstraints)
-	}
-}
-
-private extension GLKQuaternion {
-
-	init(quanternion: CMQuaternion) {
-		self.init(q: (Float(quanternion.x), Float(quanternion.y), Float(quanternion.z), Float(quanternion.w)))
-	}
-
-	func vector(for orientation: UIInterfaceOrientation) -> SCNVector4 {
-		switch orientation {
-		case .landscapeRight:
-			return SCNVector4(x: -self.y, y: self.x, z: self.z, w: self.w)
-
-		case .landscapeLeft:
-			return SCNVector4(x: self.y, y: -self.x, z: self.z, w: self.w)
-
-		case .portraitUpsideDown:
-			return SCNVector4(x: -self.x, y: -self.y, z: self.z, w: self.w)
-
-		default:
-			return SCNVector4(x: self.x, y: self.y, z: self.z, w: self.w)
-		}
-	}
-}
-
-extension CMMotionManager: @retroactive @unchecked Sendable {}
