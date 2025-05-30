@@ -73,6 +73,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
 	// MARK: Private properties
 
+    private let rendererEventTracker = DebugEventTracker(category: "Renderer", name: "CTPanoramaView Lifecycle")
 	private let MaxPanGestureRotation: Float = GLKMathDegreesToRadians(360)
 	private let radius: CGFloat = 10
 	private let sceneView = SCNView()
@@ -83,9 +84,6 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 	private var prevLocation = CGPoint.zero
 	private var prevRotation = CGFloat.zero
 	private var prevBounds = CGRect.zero
-
-    private var signpostID: OSSignpostID!
-    private var signpostState: OSSignpostIntervalState!
 
 	// Parameters used by the .both method
 	private var totalX = Float.zero
@@ -151,8 +149,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 	}
 
 	deinit {
-        Logger.panoramaViewer.notice("CTPanoramaView deinit")
-        OSSignposter.renderer.endInterval("CTPanoramaView Lifecycle", self.signpostState, "deinit")
+        self.rendererEventTracker.trackEnd(message: "deinit")
 
 		if motionManager.isDeviceMotionActive {
 			motionManager.stopDeviceMotionUpdates()
@@ -188,9 +185,8 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 	}
 
     public func transition(to image: UIImage, angle: Float, animation: AnimateOption = .fade(duration: 0.5), description: String? = nil, completion: (()->Void)? = nil) {
-        Logger.panoramaViewer.notice("transition to image \(description ?? "<nil>)")")
-        let signpostID = OSSignposter.scene.makeSignpostID(from: image)
-        let signpostState = OSSignposter.transition.beginInterval("Transition to Image", id: signpostID, "\(description ?? "<nil>)")")
+        let transitionEventTracker = DebugEventTracker(category: "Transition", name: "Transition to Image")
+        transitionEventTracker.trackBegin(message: description)
 
         let oldValue = geometryNode.geometry?.firstMaterial?.value(forKey: "newTexture")
 
@@ -224,7 +220,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
         // Animate the blend
         SCNTransaction.begin()
         SCNTransaction.completionBlock = {
-            OSSignposter.transition.endInterval("Transition to Image", signpostState)
+            transitionEventTracker.trackEnd(message: description)
             self.geometryNode.accessibilityLabel = description
         }
 
@@ -273,9 +269,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 private extension CTPanoramaView {
 
 	func commonInit() {
-        self.signpostID = OSSignposter.renderer.makeSignpostID(from: self)
-        Logger.panoramaViewer.notice("CTPanoramaView init")
-        self.signpostState = OSSignposter.renderer.beginInterval("CTPanoramaView Lifecycle", id: self.signpostID, "init")
+        self.rendererEventTracker.trackBegin(message: "init")
 
         self.add(view: self.sceneView)
 

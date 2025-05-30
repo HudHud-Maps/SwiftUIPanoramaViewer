@@ -11,8 +11,6 @@ import OSLog
 
 final class Node: SCNNode {
 
-    private var signpostID: OSSignpostID!
-    private var signpostState: OSSignpostIntervalState!
     private var role: Role {
         didSet {
             self.name = role.rawValue
@@ -25,6 +23,10 @@ final class Node: SCNNode {
         case new
     }
 
+    let eventTracker = DebugEventTracker(category: "Scene", name: "Node Lifecycle")
+
+    // MARK: - Lifecycle
+
     @available(*, unavailable)
     override init() {
         fatalError("")
@@ -35,9 +37,7 @@ final class Node: SCNNode {
         super.init()
         self.name = role.rawValue
 
-        self.signpostID = OSSignposter.scene.makeSignpostID(from: self)
-        Logger.sceneKit.notice("Node init, role: '\(role.rawValue)'")
-        self.signpostState = OSSignposter.scene.beginInterval("Node Lifecycle", id: self.signpostID, "Role: '\(role.rawValue)'")
+        eventTracker.trackBegin(message: "Role: '\(role.rawValue)'")
     }
     
     required init?(coder: NSCoder) {
@@ -45,15 +45,13 @@ final class Node: SCNNode {
     }
     
     deinit {
-        Logger.sceneKit.notice("Node deinit, role: '\(self.role.rawValue)'")
-        OSSignposter.scene.endInterval("Node Lifecycle", self.signpostState, "Role: '\(self.role.rawValue)'")
+        self.eventTracker.trackEnd(message: "Role: '\(self.role.rawValue)'")
     }
 
     // MARK: - Node
 
     func change(role: Role) {
-        Logger.sceneKit.notice("Role changed from '\(self.role.rawValue)' to '\(role.rawValue)'")
-        OSSignposter.scene.emitEvent("Role changed", id: self.signpostID, "'\(self.role.rawValue)' changed to '\(role.rawValue)'")
+        self.eventTracker.trackEvent(message: "'\(self.role.rawValue)' changed to '\(role.rawValue)'")
         self.role = role
     }
 }

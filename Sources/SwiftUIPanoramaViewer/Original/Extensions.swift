@@ -12,20 +12,6 @@ import GLKit
 import CoreMotion
 import SceneKit
 
-extension Logger {
-
-    fileprivate static var subsystem = "SwiftUIPanoramaViewer"
-
-    static let panoramaViewer = Logger(subsystem: Logger.subsystem, category: "PanoramaViewer")
-    static let sceneKit = Logger(subsystem: Logger.subsystem, category: "SceneKit")
-}
-
-extension OSSignposter {
-    static let renderer = OSSignposter(subsystem: Logger.subsystem, category: "Renderer")
-    static let scene = OSSignposter(subsystem: Logger.subsystem, category: "Scene")
-    static let transition = OSSignposter(subsystem: Logger.subsystem, category: "Transition")
-}
-
 extension UIView {
 
     static func forAutolayout() -> Self {
