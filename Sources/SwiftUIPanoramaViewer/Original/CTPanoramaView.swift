@@ -35,7 +35,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
     public var startAngle: Float = .pi
 	public var rotationHandler: ((_ rotationKey: Float) -> Void)?
 
-	public var angleOffset: Float = 0 {
+    public var angleOffset: Float = .pi {
 		didSet {
 			geometryNode.rotation = SCNQuaternion(0, 1, 0, angleOffset)
 		}
@@ -142,12 +142,6 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 		commonInit()
 	}
 
-	public convenience init(frame: CGRect, image: UIImage) {
-		self.init(frame: frame)
-		// Force Swift to call the property observer by calling the setter from a non-init context
-		({ self.image = image })()
-	}
-
 	deinit {
         self.rendererEventTracker.trackEnd(message: "deinit")
 
@@ -185,10 +179,14 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 	}
 
     public func transition(to image: UIImage, angle: Float, animation: AnimateOption = .fade(duration: 0.5), description: String? = nil, completion: (()->Void)? = nil) {
+        defer {
+            self.image = image
+        }
+
         let transitionEventTracker = DebugEventTracker(category: "Transition", name: "Transition to Image")
         transitionEventTracker.trackBegin(message: description)
 
-        let oldValue = geometryNode.geometry?.firstMaterial?.value(forKey: "newTexture")
+        let oldValue = self.geometryNode.geometry?.firstMaterial?.value(forKey: "newTexture")
 
         let material = SCNMaterial()
         material.isDoubleSided = false
@@ -208,8 +206,9 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
             uniform sampler2D newTexture;
             uniform float blendFactor;
 
-            vec4 oldColor = texture2D(oldTexture, _surface.diffuseTexcoord);
-            vec4 newColor = texture2D(newTexture, _surface.diffuseTexcoord);
+            vec2 flippedTexcoord = vec2(1.0 - _surface.diffuseTexcoord.x, _surface.diffuseTexcoord.y);
+            vec4 oldColor = texture2D(oldTexture, flippedTexcoord);
+            vec4 newColor = texture2D(newTexture, flippedTexcoord);
             _output.color = mix(oldColor, newColor, blendFactor);
             """
         ]
