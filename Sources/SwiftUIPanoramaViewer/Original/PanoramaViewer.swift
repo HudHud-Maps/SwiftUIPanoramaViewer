@@ -13,30 +13,6 @@ import OSLog
 import UIKit
 import CoreLocation
 
-/// The `PanoramaViewer` allows you to display an interactive panorama viewer in a SwiftUI `View`.
-///
-/// Take the following example:
-///
-/// ```swift
-/// @State var rotationIndicator:Float = 0.0
-/// ...
-///
-/// ZStack {
-/// PanoramaViewer(image: SwiftUIPanoramaViewer.bindImage("PanoramaImageName")) {key in }
-/// cameraMoved: { pitch, yaw, roll in
-///     rotationIndicator = yaw
-/// }
-///
-/// CompassView()
-///    .frame(width: 50.0, height: 50.0)
-///    .rotationEffect(Angle(degrees: Double(rotationIndicator)))
-/// }
-/// // If using `SwiftUIGamepad` package, allow the gamepad to rotate the view.
-/// .onGamepadLeftThumbstick(viewID: viewID) { xAxis, yAxis in
-///     PanoramaManager.moveCamera(xAxis: xAxis, yAxis: yAxis)
-/// }
-/// ```
-///
 public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
 
 	public enum ProgressiveImage {
@@ -108,9 +84,7 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
     }
     
     // MARK: - Functions
-    /// Creates a new instance of the `PanoramaViewer`.
-    /// - Parameter context: The context to create the viewer in.
-    /// - Returns: Returns the new `PanoramaViewer`.
+
     public func makeUIView(context: Context) -> UIViewType {
         let view = CTPanoramaView()
         view.controlMethod = self.controlMethod
@@ -126,10 +100,6 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
         uiView.cleanup()
     }
 
-    /// Handles the `PanoramaViewer` being updated.
-    /// - Parameters:
-    ///   - uiView: The `PanoramaViewer` that is updating.
-    ///   - context: The context that the view is updating in.
     public func updateUIView(_ uiView: UIViewType, context: Context) {
 		switch self.progressiveImage {
 		case let .loading(_, image, id, angle):
@@ -145,15 +115,3 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
 		}
     }
 }
-
-extension FloatingPoint {
-
-    func toDegrees() -> Self {
-        return self * 180 / .pi
-    }
-
-    func toRadians() -> Self {
-        return self * .pi / 180
-    }
-}
-

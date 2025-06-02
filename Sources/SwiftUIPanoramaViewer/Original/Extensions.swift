@@ -33,6 +33,22 @@ extension UIView {
     }
 }
 
+extension FloatingPoint {
+
+    func toDegrees() -> Self {
+        return self * 180 / .pi
+    }
+
+    func toRadians() -> Self {
+        return self * .pi / 180
+    }
+
+    func normalizeAngle() -> Self {
+        let normalized = self.truncatingRemainder(dividingBy: 360)
+        return normalized >= 0 ? normalized : normalized + 360
+    }
+}
+
 @MainActor
 extension CMDeviceMotion {
 

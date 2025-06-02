@@ -242,9 +242,9 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
             touchLocation, options: nil
         ).first?.localCoordinates {
             let widthPercentage = 0.5 + (atan2(localSphereCoordinates.z, localSphereCoordinates.x) / (2 * .pi))
-            let angle = ((widthPercentage * 360) + 90).truncatingRemainder(dividingBy: 360) // the image starts before 90 degrees, so we add it back
-            Logger.panoramaViewer.notice("angle is: \(angle)")
-            tapHandler?(CLLocationDirection(angle))
+            let angle = ((widthPercentage * 360) + 90).normalizeAngle() // the image starts before 90 degrees, so we add it back
+            Logger.panoramaViewer.notice("tap angle is: \(angle)")
+            self.tapHandler?(CLLocationDirection(angle))
         }
 	}
 
@@ -296,8 +296,7 @@ private extension CTPanoramaView {
         self.motionManager.deviceMotionUpdateInterval = 0.015
 
         self.motionPaused = false
-        self.motionManager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: motionQueue,
-											   withHandler: { [weak self] (motionData, error) in
+        self.motionManager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: self.motionQueue, withHandler: { [weak self] motionData, error in
 			guard let panoramaView = self else {return}
 			guard !panoramaView.motionPaused else {return}
 
@@ -309,10 +308,8 @@ private extension CTPanoramaView {
 				return
 			}
 
-
             DispatchQueue.main.async {
                 // Use quaternions when in spherical mode to prevent gimbal lock
-
                 var orientation = motionData.orientation()
 
                 // Represent the orientation as a GLKQuaternion
@@ -358,7 +355,6 @@ private extension CTPanoramaView {
             if self.motionManager.isDeviceMotionActive {
                 self.motionManager.stopDeviceMotionUpdates()
 			}
-
 		}
 		else {
 			if method == .both {
@@ -374,16 +370,14 @@ private extension CTPanoramaView {
 				pinchRec.delegate = self
 				rotateRec.delegate = self
 			}
-
             self.startMotionUpdates()
-
 		}
 	}
 
 	func reportMovement(_ rotationAngle: CGFloat, _ fieldOfViewAngle: CGFloat, callHandler: Bool = true) {
-		if callHandler {
-            self.movementHandler?(rotationAngle + CGFloat(self.cameraStartAngle), fieldOfViewAngle)
-		}
+        guard callHandler else { return }
+
+        self.movementHandler?(rotationAngle + CGFloat(self.cameraStartAngle), fieldOfViewAngle)
 	}
 
 	// MARK: Gesture handling
@@ -391,7 +385,6 @@ private extension CTPanoramaView {
 	@objc func handlePan(panRec: UIPanGestureRecognizer) {
 		if panRec.state == .began {
             self.prevLocation = CGPoint.zero
-
 		} else if panRec.state == .changed {
             let orientation = self.cameraNode.orientation
             let location = panRec.translation(in: self.sceneView)
@@ -406,7 +399,6 @@ private extension CTPanoramaView {
 
 			// If both, just accumulate, our sensor callback will handle it
             if (self.controlMethod == .both) {
-
 				// Use the pan translation along the x axis to adjust the camera's rotation about the y axis (side to side navigation).
 				let yScalar = Float(translationDelta.x / self.bounds.size.width)
 				let yRadians = yScalar * MaxPanGestureRotation
@@ -417,7 +409,6 @@ private extension CTPanoramaView {
                 self.totalX += xRadians
                 self.totalY += yRadians
 			} else { // Otherwise, do the math here since we have no sensor
-
 				// Use the pan translation along the x axis to adjust the camera's rotation about the y axis (side to side navigation).
 				let yScalar = Float(translationDelta.x / self.bounds.size.width)
 				let yRadians = yScalar * MaxPanGestureRotation
@@ -438,7 +429,6 @@ private extension CTPanoramaView {
 				glQuaternion = GLKQuaternionMultiply(yMultiplier, glQuaternion)
 
                 self.cameraNode.orientation = SCNQuaternion(x: glQuaternion.x, y: glQuaternion.y, z: glQuaternion.z, w: glQuaternion.w)
-
 			}
 
             self.prevLocation = location
@@ -472,27 +462,21 @@ private extension CTPanoramaView {
             if (self.controlMethod == .both) {
                 self.motionPaused = true
 			}
-
 		} else if rotRec.state == .changed {
-
             let orientation = self.cameraNode.orientation
 			let rotation = rotRec.rotation
 
 			let zRadians = rotation - prevRotation
 
-			// use a Quaternion instead of eluer angles
-			// so we can switch from sensor to finger rotation
-			// smoothly
-
+			// use a Quaternion instead of eluer angles so we
+            // can switch from sensor to finger rotation smoothly
 			var glQuaternion = GLKQuaternionMake(orientation.x, orientation.y, orientation.z, orientation.w)
 
 			let zMultiplier = GLKQuaternionMakeWithAngleAndAxis(Float(zRadians), 0, 0, 1)
 			glQuaternion = GLKQuaternionMultiply(glQuaternion, zMultiplier)
 
             self.cameraNode.orientation = SCNQuaternion(x: glQuaternion.x, y: glQuaternion.y, z: glQuaternion.z, w: glQuaternion.w)
-
             self.prevRotation = rotation
-
 		}
 		else {
             self.motionPaused = false
