@@ -202,10 +202,16 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
             uniform sampler2D oldTexture;
             uniform sampler2D newTexture;
             uniform float blendFactor;
+            uniform float rotation; // in radians
 
             vec2 flippedTexcoord = vec2(1.0 - _surface.diffuseTexcoord.x, _surface.diffuseTexcoord.y);
-            vec4 oldColor = texture2D(oldTexture, flippedTexcoord);
-            vec4 newColor = texture2D(newTexture, flippedTexcoord);
+            
+            // Adjust texture coordinate for horizontal rotation
+            float u = fract(flippedTexcoord.x + rotation / (2.0 * 3.1415926)); // Normalize radians to [0,1)
+            vec2 rotatedTexcoord = vec2(u, flippedTexcoord.y);
+
+            vec4 oldColor = texture2D(oldTexture, rotatedTexcoord);
+            vec4 newColor = texture2D(newTexture, rotatedTexcoord);
             _output.color = mix(oldColor, newColor, blendFactor);
             """
         ]
