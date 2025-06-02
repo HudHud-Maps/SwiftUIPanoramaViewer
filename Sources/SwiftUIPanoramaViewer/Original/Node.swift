@@ -19,8 +19,7 @@ final class Node: SCNNode {
 
     enum Role: String {
         case camera
-        case persistent
-        case new
+        case sphere
     }
 
     let eventTracker = DebugEventTracker(category: "Scene", name: "Node Lifecycle")

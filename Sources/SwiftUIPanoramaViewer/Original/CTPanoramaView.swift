@@ -21,6 +21,9 @@ public enum CTPanoramaControlMethod: Int {
 
 public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
+    public typealias MovementHandler = ((_ rotationAngle: CGFloat, _ fieldOfViewAngle: CGFloat) -> Void)
+    public typealias TapHandler = ((CLLocationDirection) -> Void)
+
 	public enum AnimateOption {
 		case none
 		case fade(duration: TimeInterval)
@@ -28,16 +31,15 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
 	// MARK: Public properties
 
-	public var movementHandler: ((_ rotationAngle: CGFloat, _ fieldOfViewAngle: CGFloat) -> Void)?
-    public var tapHandler: ((Float) -> Void)?
+	public var movementHandler: MovementHandler?
+    public var tapHandler: TapHandler?
 
 	public var panSpeed = CGPoint(x: 0.4, y: 0.4)
-    public var startAngle: Float = .pi
-	public var rotationHandler: ((_ rotationKey: Float) -> Void)?
+    public var cameraStartAngle: CLLocationDirection = .pi
 
-    public var angleOffset: Float = .pi {
+    public var imageRotationAngle: Float = .pi {
 		didSet {
-			geometryNode.rotation = SCNQuaternion(0, 1, 0, angleOffset)
+			geometryNode.rotation = SCNQuaternion(0, 1, 0, imageRotationAngle)
 		}
 	}
 
@@ -54,12 +56,11 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 	public var maxFoV: CGFloat = 120
 
 	private(set) var image: UIImage?
-	private(set) var currentTransition: SCNAction?
 
 	public var controlMethod: CTPanoramaControlMethod = .touch {
 		didSet {
-			switchControlMethod(to: controlMethod)
-			resetCameraAngles();
+            self.switchControlMethod(to: self.controlMethod)
+            self.resetCameraAngles();
 		}
 	}
 
@@ -67,7 +68,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
 	public override var backgroundColor: UIColor? {
 		didSet {
-			sceneView.backgroundColor = backgroundColor
+            self.sceneView.backgroundColor = self.backgroundColor
 		}
 	}
 
@@ -80,7 +81,6 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 	private let scene = SCNScene()
 	private let motionManager = CMMotionManager()
 	private var geometryNode: Node!
-	private var temporaryGeometryNodes: [Node] = []
 	private var prevLocation = CGPoint.zero
 	private var prevRotation = CGFloat.zero
 	private var prevBounds = CGRect.zero
@@ -98,7 +98,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 		return node
 	}()
 
-	private lazy var opQueue: OperationQueue = {
+	private lazy var motionQueue: OperationQueue = {
 		let queue = OperationQueue()
 		queue.qualityOfService = .userInteractive
 		return queue
@@ -108,15 +108,15 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 		return tan(self.yFov/2 * .pi / 180.0) * 2 * self.radius
 	}()
 
-	private var startScale: CGFloat = 0.0
+	private var pinchStartScale: CGFloat = 0.0
 
 	private var xFov: CGFloat {
-		return yFov * self.bounds.width / self.bounds.height
+        return self.yFov * self.bounds.width / self.bounds.height
 	}
 
 	private var yFov: CGFloat {
 		get {
-			return cameraNode.camera?.fieldOfView ?? 0
+            return self.cameraNode.camera?.fieldOfView ?? 0
 		}
 		set {
             self.cameraNode.camera?.fieldOfView = newValue
@@ -134,19 +134,19 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
 	public required init?(coder aDecoder: NSCoder) {
 		super.init(coder: aDecoder)
-		commonInit()
+        self.commonInit()
 	}
 
 	public override init(frame: CGRect) {
 		super.init(frame: frame)
-		commonInit()
+        self.commonInit()
 	}
 
 	deinit {
         self.rendererEventTracker.trackEnd(message: "deinit")
 
-		if motionManager.isDeviceMotionActive {
-			motionManager.stopDeviceMotionUpdates()
+        if self.motionManager.isDeviceMotionActive {
+            self.motionManager.stopDeviceMotionUpdates()
 		}
 	}
 
@@ -154,9 +154,9 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
 	public override func layoutSubviews() {
 		super.layoutSubviews()
-		if bounds.size.width != prevBounds.size.width || bounds.size.height != prevBounds.size.height {
-			sceneView.setNeedsDisplay()
-			reportMovement(CGFloat(-cameraNode.eulerAngles.y), xFov.toRadians(), callHandler: false)
+        if self.bounds.size.width != self.prevBounds.size.width || self.bounds.size.height != self.prevBounds.size.height {
+            self.sceneView.setNeedsDisplay()
+            self.reportMovement(CGFloat(-self.cameraNode.eulerAngles.y), self.xFov.toRadians(), callHandler: false)
 		}
 	}
 
@@ -172,10 +172,10 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
 	public func resetCameraAngles() {
         self.yFov = 60
-        self.cameraNode.eulerAngles = SCNVector3Make(0, self.startAngle, 0)
+        self.cameraNode.eulerAngles = SCNVector3Make(0, Float(self.cameraStartAngle), 0)
         self.totalX = Float.zero
         self.totalY = Float.zero
-        self.reportMovement(CGFloat(self.startAngle), self.xFov.toRadians(), callHandler: false)
+        self.reportMovement(CGFloat(self.cameraStartAngle), self.xFov.toRadians(), callHandler: false)
 	}
 
     public func transition(to image: UIImage, angle: Float, animation: AnimateOption = .fade(duration: 0.5), description: String? = nil, completion: (()->Void)? = nil) {
@@ -187,14 +187,11 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
         transitionEventTracker.trackBegin(message: description)
 
         let oldValue = self.geometryNode.geometry?.firstMaterial?.value(forKey: "newTexture")
+        let newProperty = SCNMaterialProperty(contents: image)
 
         let material = SCNMaterial()
         material.isDoubleSided = false
         material.cullMode = .front
-
-        // Assign initial values
-        let newProperty = SCNMaterialProperty(contents: image)
-
         material.setValue(oldValue, forKey: "oldTexture")
         material.setValue(newProperty, forKey: "newTexture")
         material.setValue(0.0, forKey: "blendFactor")
@@ -212,8 +209,6 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
             _output.color = mix(oldColor, newColor, blendFactor);
             """
         ]
-
-        // Assign material to geometry
         self.geometryNode.geometry?.firstMaterial = material
 
         // Animate the blend
@@ -221,6 +216,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
         SCNTransaction.completionBlock = {
             transitionEventTracker.trackEnd(message: description)
             self.geometryNode.accessibilityLabel = description
+            self.reportMovement(CGFloat(-self.cameraNode.eulerAngles.y), self.xFov.toRadians(), callHandler: true)
         }
 
         switch animation {
@@ -248,7 +244,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
             let widthPercentage = 0.5 + (atan2(localSphereCoordinates.z, localSphereCoordinates.x) / (2 * .pi))
             let angle = ((widthPercentage * 360) + 90).truncatingRemainder(dividingBy: 360) // the image starts before 90 degrees, so we add it back
             Logger.panoramaViewer.notice("angle is: \(angle)")
-            tapHandler?(Float(angle))
+            tapHandler?(CLLocationDirection(angle))
         }
 	}
 
@@ -279,7 +275,7 @@ private extension CTPanoramaView {
 
         let sphere = SCNSphere(radius: self.radius)
         sphere.segmentCount = 360
-        self.geometryNode = Node(role: .new)
+        self.geometryNode = Node(role: .sphere)
         self.geometryNode.geometry = sphere
         self.scene.rootNode.addChildNode(self.geometryNode)
 
@@ -296,11 +292,11 @@ private extension CTPanoramaView {
 	// MARK: Configuration helper methods
 
 	func startMotionUpdates(){
-		guard motionManager.isDeviceMotionAvailable else {return}
-		motionManager.deviceMotionUpdateInterval = 0.015
+        guard self.motionManager.isDeviceMotionAvailable else {return}
+        self.motionManager.deviceMotionUpdateInterval = 0.015
 
-		motionPaused = false
-		motionManager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: opQueue,
+        self.motionPaused = false
+        self.motionManager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: motionQueue,
 											   withHandler: { [weak self] (motionData, error) in
 			guard let panoramaView = self else {return}
 			guard !panoramaView.motionPaused else {return}
@@ -344,53 +340,49 @@ private extension CTPanoramaView {
 	}
 
 	func switchControlMethod(to method: CTPanoramaControlMethod) {
-		sceneView.gestureRecognizers?.removeAll()
+        self.sceneView.gestureRecognizers?.removeAll()
 
 		if method == .touch {
 			let panGestureRec = UIPanGestureRecognizer(target: self, action: #selector(handlePan(panRec:)))
-			sceneView.addGestureRecognizer(panGestureRec)
+            self.sceneView.addGestureRecognizer(panGestureRec)
 
 			let pinchRec = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(pinchRec:)))
-			sceneView.addGestureRecognizer(pinchRec)
+            self.sceneView.addGestureRecognizer(pinchRec)
 
 			let rotateRec = UIRotationGestureRecognizer(target: self, action: #selector(handleRotate(rotRec:)))
-			sceneView.addGestureRecognizer(rotateRec)
+            self.sceneView.addGestureRecognizer(rotateRec)
 
 			pinchRec.delegate = self
 			rotateRec.delegate = self
 
-			if motionManager.isDeviceMotionActive {
-				motionManager.stopDeviceMotionUpdates()
+            if self.motionManager.isDeviceMotionActive {
+                self.motionManager.stopDeviceMotionUpdates()
 			}
 
 		}
 		else {
 			if method == .both {
 				let panGestureRec = UIPanGestureRecognizer(target: self, action: #selector(handlePan(panRec:)))
-				sceneView.addGestureRecognizer(panGestureRec)
+                self.sceneView.addGestureRecognizer(panGestureRec)
 
 				let pinchRec = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(pinchRec:)))
-				sceneView.addGestureRecognizer(pinchRec)
+                self.sceneView.addGestureRecognizer(pinchRec)
 
 				let rotateRec = UIRotationGestureRecognizer(target: self, action: #selector(handleRotate(rotRec:)))
-				sceneView.addGestureRecognizer(rotateRec)
+                self.sceneView.addGestureRecognizer(rotateRec)
 
 				pinchRec.delegate = self
 				rotateRec.delegate = self
 			}
 
-			startMotionUpdates()
+            self.startMotionUpdates()
 
 		}
 	}
 
 	func reportMovement(_ rotationAngle: CGFloat, _ fieldOfViewAngle: CGFloat, callHandler: Bool = true) {
 		if callHandler {
-			movementHandler?(rotationAngle, fieldOfViewAngle)
-		}
-
-		if let rotationHandler = rotationHandler {
-			rotationHandler(Float(rotationAngle))
+            self.movementHandler?(rotationAngle + CGFloat(self.cameraStartAngle), fieldOfViewAngle)
 		}
 	}
 
@@ -398,22 +390,22 @@ private extension CTPanoramaView {
 
 	@objc func handlePan(panRec: UIPanGestureRecognizer) {
 		if panRec.state == .began {
-			prevLocation = CGPoint.zero
+            self.prevLocation = CGPoint.zero
 
 		} else if panRec.state == .changed {
-			let orientation = cameraNode.orientation
-			let location = panRec.translation(in: sceneView)
+            let orientation = self.cameraNode.orientation
+            let location = panRec.translation(in: self.sceneView)
 
 			let translationDelta = CGPoint(
-				x: (location.x - prevLocation.x) * panSpeed.x,
-				y: (location.y - prevLocation.y) * panSpeed.y
+                x: (location.x - self.prevLocation.x) * self.panSpeed.x,
+                y: (location.y - self.prevLocation.y) * self.panSpeed.y
 			)
 
 			// Accumulate these if wheb using .both method so that we can apply the rotations
 			// to the sensor data and smoothly move with both touch and motion controls at the same time
 
 			// If both, just accumulate, our sensor callback will handle it
-			if (controlMethod == .both) {
+            if (self.controlMethod == .both) {
 
 				// Use the pan translation along the x axis to adjust the camera's rotation about the y axis (side to side navigation).
 				let yScalar = Float(translationDelta.x / self.bounds.size.width)
@@ -422,8 +414,8 @@ private extension CTPanoramaView {
 				let xScalar = Float(translationDelta.y / self.bounds.size.height)
 				let xRadians = xScalar * MaxPanGestureRotation
 
-				totalX += xRadians
-				totalY += yRadians
+                self.totalX += xRadians
+                self.totalY += yRadians
 			} else { // Otherwise, do the math here since we have no sensor
 
 				// Use the pan translation along the x axis to adjust the camera's rotation about the y axis (side to side navigation).
@@ -445,12 +437,12 @@ private extension CTPanoramaView {
 				let yMultiplier = GLKQuaternionMakeWithAngleAndAxis(yRadians, 0, 1, 0)
 				glQuaternion = GLKQuaternionMultiply(yMultiplier, glQuaternion)
 
-				cameraNode.orientation = SCNQuaternion(x: glQuaternion.x, y: glQuaternion.y, z: glQuaternion.z, w: glQuaternion.w)
+                self.cameraNode.orientation = SCNQuaternion(x: glQuaternion.x, y: glQuaternion.y, z: glQuaternion.z, w: glQuaternion.w)
 
 			}
 
-			prevLocation = location
-			reportMovement(self.cameraAngle, xFov.toRadians())
+            self.prevLocation = location
+            self.reportMovement(self.cameraAngle, self.xFov.toRadians())
 		}
 	}
 
@@ -462,11 +454,11 @@ private extension CTPanoramaView {
 		let zoom = CGFloat(pinchRec.scale)
 		switch pinchRec.state {
 		case .began:
-			startScale = cameraNode.camera!.fieldOfView
+            self.pinchStartScale = cameraNode.camera!.fieldOfView
 		case .changed:
-			let fov = startScale / zoom
-			if fov > minFoV && fov <= maxFoV {
-				cameraNode.camera!.fieldOfView = fov
+            let fov = self.pinchStartScale / zoom
+            if fov > self.minFoV && fov <= self.maxFoV {
+                self.cameraNode.camera!.fieldOfView = fov
 			}
 		default:
 			break
@@ -475,15 +467,15 @@ private extension CTPanoramaView {
 
 	@objc func handleRotate(rotRec: UIRotationGestureRecognizer) {
 		if rotRec.state == .began {
-			prevRotation = CGFloat.zero
+            self.prevRotation = CGFloat.zero
 
-			if (controlMethod == .both) {
-				motionPaused = true
+            if (self.controlMethod == .both) {
+                self.motionPaused = true
 			}
 
 		} else if rotRec.state == .changed {
 
-			let orientation = cameraNode.orientation
+            let orientation = self.cameraNode.orientation
 			let rotation = rotRec.rotation
 
 			let zRadians = rotation - prevRotation
@@ -497,13 +489,13 @@ private extension CTPanoramaView {
 			let zMultiplier = GLKQuaternionMakeWithAngleAndAxis(Float(zRadians), 0, 0, 1)
 			glQuaternion = GLKQuaternionMultiply(glQuaternion, zMultiplier)
 
-			cameraNode.orientation = SCNQuaternion(x: glQuaternion.x, y: glQuaternion.y, z: glQuaternion.z, w: glQuaternion.w)
+            self.cameraNode.orientation = SCNQuaternion(x: glQuaternion.x, y: glQuaternion.y, z: glQuaternion.z, w: glQuaternion.w)
 
-			prevRotation = rotation
+            self.prevRotation = rotation
 
 		}
 		else {
-			motionPaused = false
+            self.motionPaused = false
 		}
 	}
 }

@@ -11,6 +11,7 @@ import Foundation
 import SwiftUI
 import OSLog
 import UIKit
+import CoreLocation
 
 /// The `PanoramaViewer` allows you to display an interactive panorama viewer in a SwiftUI `View`.
 ///
@@ -70,26 +71,18 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
 	}
 
     // MARK: - Type
-    /// The type of view being managed by the `PanoramaViewer`.
+
     public typealias UIViewType = CTPanoramaView
     
     // MARK: - Properties
-    /// The `UIImage` being displayed in the `PanoramaViewer`.
+
 	@Binding public var progressiveImage: ProgressiveImage?
 
-    /// The type of user interaction that the `PanoramaViewer` supports.
     public var controlMethod: CTPanoramaControlMethod = .touch
-
-    /// The viewer background color.
-    public var backgroundColor:UIColor = .black
-    
-    /// Handles the view rotating.
-	public var rotationHandler: ((_ rotationKey: Float) -> Void)?
-
-    /// Handles the camera being moved.
-    public var cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)?
-
-    public var tapHandler: ((Float) -> Void)?
+    public var backgroundColor: UIColor = .black
+    public var initialCameraAngle: CLLocationDegrees = 0
+    public var movementHandler: CTPanoramaView.MovementHandler?
+    public var tapHandler: CTPanoramaView.TapHandler?
 
     // MARK: - Initializers
     /// Creates a new instance.
@@ -100,12 +93,17 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
     ///   - backgroundColor: The viewer background color.
     ///   - rotationHandler: Handle the panorama being rotated.
     ///   - cameraMoved: Handles the panorama camera being moved and returns the new Pitch, Yaw and Rotation.
-	public init(progressiveImage: Binding<ProgressiveImage?>, controlMethod: CTPanoramaControlMethod = .touch, backgroundColor:UIColor = .black, rotationHandler: ((_ rotationKey: Float) -> Void)? = nil, cameraMoved: ((_ pitch:Float, _ yaw:Float, _ roll:Float) -> Void)? = nil, tapHandler: ((Float) -> Void)? = nil) {
+    public init(progressiveImage: Binding<ProgressiveImage?>,
+                controlMethod: CTPanoramaControlMethod = .touch,
+                backgroundColor:UIColor = .black,
+                initialCameraAngle: CLLocationDegrees = 0,
+                movementHandler: CTPanoramaView.MovementHandler? = nil,
+                tapHandler: CTPanoramaView.TapHandler?) {
         self._progressiveImage = progressiveImage
         self.controlMethod = controlMethod
         self.backgroundColor = backgroundColor
-        self.rotationHandler = rotationHandler
-        self.cameraMoved = cameraMoved
+        self.initialCameraAngle = initialCameraAngle
+        self.movementHandler = movementHandler
 		self.tapHandler = tapHandler
     }
     
@@ -114,17 +112,12 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
     /// - Parameter context: The context to create the viewer in.
     /// - Returns: Returns the new `PanoramaViewer`.
     public func makeUIView(context: Context) -> UIViewType {
-        // Create and initialize
         let view = CTPanoramaView()
-        view.controlMethod = controlMethod
-        view.backgroundColor = backgroundColor
-        view.rotationHandler = rotationHandler
-		view.tapHandler = tapHandler
-        if let image = self.progressiveImage?.image {
-            view.transition(to: image, angle: self.progressiveImage?.angle.toRadians() ?? 0, animation: .none)
-		}
-        
-        // Return viewer
+        view.controlMethod = self.controlMethod
+        view.backgroundColor = self.backgroundColor
+        view.movementHandler = self.movementHandler
+        view.tapHandler = self.tapHandler
+//        view.cameraStartAngle = self.initialCameraAngle + .pi
         return view
     }
 

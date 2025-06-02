@@ -8,14 +8,14 @@
 import Foundation
 import OSLog
 
-extension Logger {
+public extension Logger {
 
-    fileprivate static var subsystem = "SwiftUIPanoramaViewer"
+    static var subsystem = "SwiftUIPanoramaViewer"
 
     static let panoramaViewer = Logger(subsystem: Logger.subsystem, category: "PanoramaViewer")
 }
 
-class DebugEventTracker {
+public class DebugEventTracker {
 
     let category: String
     let name: StaticString
@@ -25,16 +25,16 @@ class DebugEventTracker {
 
     // MARK: - Lifecycle
 
-    init(category: String, name: StaticString) {
+    public init(subsystem: String = Logger.subsystem, category: String, name: StaticString) {
         self.category = category
         self.name = name
-        self.signposter = OSSignposter(subsystem: Logger.subsystem, category: category)
-        self.logger = Logger(subsystem: Logger.subsystem, category: category)
+        self.signposter = OSSignposter(subsystem: subsystem, category: category)
+        self.logger = Logger(subsystem: subsystem, category: category)
     }
 
     // MARK: - DebugEventTracker
 
-    func trackBegin(message: String? = nil) {
+    public func trackBegin(message: String? = nil) {
         let signpostID = self.signposter.makeSignpostID(from: self)
 
         if let message {
@@ -46,7 +46,7 @@ class DebugEventTracker {
         }
     }
 
-    func trackEnd(message: String? = nil) {
+    public func trackEnd(message: String? = nil) {
         guard let signpostState = self.signpostState else { return }
 
         if let message {
@@ -58,7 +58,7 @@ class DebugEventTracker {
         }
     }
 
-    func trackEvent(message: String? = nil) {
+    public func trackEvent(message: String? = nil) {
         let signpostID = self.signposter.makeSignpostID(from: self)
 
         if let message {
