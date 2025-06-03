@@ -47,6 +47,12 @@ extension FloatingPoint {
         let normalized = self.truncatingRemainder(dividingBy: 360)
         return normalized >= 0 ? normalized : normalized + 360
     }
+
+    func normalizedRadians() -> Self {
+        let twoPi: Self = .pi * 2
+        let r = self.truncatingRemainder(dividingBy: twoPi)
+        return r >= 0 ? r : r + twoPi
+    }
 }
 
 @MainActor

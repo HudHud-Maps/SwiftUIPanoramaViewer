@@ -35,13 +35,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
     public var tapHandler: TapHandler?
 
 	public var panSpeed = CGPoint(x: 0.4, y: 0.4)
-    public var cameraStartAngle: CLLocationDirection = .pi
-
-    public var imageRotationAngle: Float = .pi {
-		didSet {
-			geometryNode.rotation = SCNQuaternion(0, 1, 0, imageRotationAngle)
-		}
-	}
+    public var cameraStartAngle: CGFloat
 
 	public var cameraAngle: CGFloat {
 		let quaternion = self.cameraNode.orientation
@@ -124,7 +118,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 	}
     
     private var horizontalFieldOfView: Float {
-        let verticalFieldOfViewInRadians = (cameraNode.camera?.fieldOfView ?? 0) * .pi / 180
+        let verticalFieldOfViewInRadians = (self.cameraNode.camera?.fieldOfView ?? 0) * .pi / 180
         let aspectRatio = bounds.width / bounds.height
         let horizontalFieldOfViewInRadians = 2 * atan(tan(verticalFieldOfViewInRadians / 2) * aspectRatio)
         return Float(horizontalFieldOfViewInRadians * 180 / .pi)
@@ -132,15 +126,15 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
 	// MARK: Class lifecycle methods
 
-	public required init?(coder aDecoder: NSCoder) {
-		super.init(coder: aDecoder)
+    public init(cameraStartAngle: CGFloat = 0) {
+        self.cameraStartAngle = cameraStartAngle
+        super.init(frame: .zero)
         self.commonInit()
-	}
-
-	public override init(frame: CGRect) {
-		super.init(frame: frame)
-        self.commonInit()
-	}
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
 	deinit {
         self.rendererEventTracker.trackEnd(message: "deinit")
@@ -156,7 +150,6 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 		super.layoutSubviews()
         if self.bounds.size.width != self.prevBounds.size.width || self.bounds.size.height != self.prevBounds.size.height {
             self.sceneView.setNeedsDisplay()
-            self.reportMovement(CGFloat(-self.cameraNode.eulerAngles.y), self.xFov.toRadians(), callHandler: false)
 		}
 	}
 
@@ -172,10 +165,10 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
 	public func resetCameraAngles() {
         self.yFov = 60
-        self.cameraNode.eulerAngles = SCNVector3Make(0, Float(self.cameraStartAngle), 0)
+        self.cameraNode.eulerAngles = SCNVector3Make(0, Float(self.cameraStartAngle) + .pi, 0)
         self.totalX = Float.zero
         self.totalY = Float.zero
-        self.reportMovement(CGFloat(self.cameraStartAngle), self.xFov.toRadians(), callHandler: false)
+        self.reportMovement()
 	}
 
     public func transition(to image: UIImage, angle: Float, animation: AnimateOption = .fade(duration: 0.5), description: String? = nil, completion: (()->Void)? = nil) {
@@ -183,8 +176,10 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
             self.image = image
         }
 
+        Logger.panoramaViewer.notice("Scene Rotation: \(angle) rad")
+
         let transitionEventTracker = DebugEventTracker(category: "Transition", name: "Transition to Image")
-        transitionEventTracker.trackBegin(message: description)
+        transitionEventTracker.trackBegin(message: "\(description ?? "") at angle \(angle) rad")
 
         let oldValue = self.geometryNode.geometry?.firstMaterial?.value(forKey: "newTexture")
         let newProperty = SCNMaterialProperty(contents: image)
@@ -195,6 +190,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
         material.setValue(oldValue, forKey: "oldTexture")
         material.setValue(newProperty, forKey: "newTexture")
         material.setValue(0.0, forKey: "blendFactor")
+        material.setValue(angle, forKey: "rotation")
 
         // Shader modifier for texture blending
         material.shaderModifiers = [
@@ -222,7 +218,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
         SCNTransaction.completionBlock = {
             transitionEventTracker.trackEnd(message: description)
             self.geometryNode.accessibilityLabel = description
-            self.reportMovement(CGFloat(-self.cameraNode.eulerAngles.y), self.xFov.toRadians(), callHandler: true)
+            self.reportMovement()
         }
 
         switch animation {
@@ -244,13 +240,15 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 		self.addSubview(tapIndicator)
 		tapIndicator.animateCircles(center: touchLocation)
 
-        if let localSphereCoordinates = sceneView.hitTest(
-            touchLocation, options: nil
-        ).first?.localCoordinates {
-            let widthPercentage = 0.5 + (atan2(localSphereCoordinates.z, localSphereCoordinates.x) / (2 * .pi))
-            let angle = ((widthPercentage * 360) + 90).normalizeAngle() // the image starts before 90 degrees, so we add it back
-            Logger.panoramaViewer.notice("tap angle is: \(angle)")
-            self.tapHandler?(CLLocationDirection(angle))
+        if let localSphereCoordinates = self.sceneView.hitTest(touchLocation, options: nil).first?.localCoordinates {
+            // SceneKit angle relative to +X, in radians (−π ... π)
+            let rawAngle = atan2(Double(localSphereCoordinates.z), Double(localSphereCoordinates.x))
+
+            // Keep result in [0, 2π)
+            let angleRad = rawAngle.normalizedRadians()
+
+            Logger.panoramaViewer.notice("tap angle is: \(angleRad) rad")
+            self.tapHandler?(angleRad)
         }
 	}
 
@@ -337,7 +335,7 @@ private extension CTPanoramaView {
 
                 }
                 panoramaView.cameraNode.orientation = orientation
-				panoramaView.reportMovement(CGFloat(-panoramaView.cameraNode.eulerAngles.y), panoramaView.xFov.toRadians())
+				panoramaView.reportMovement()
 			}
 		})
 	}
@@ -380,10 +378,11 @@ private extension CTPanoramaView {
 		}
 	}
 
-	func reportMovement(_ rotationAngle: CGFloat, _ fieldOfViewAngle: CGFloat, callHandler: Bool = true) {
-        guard callHandler else { return }
+	func reportMovement() {
+        let rotationAngle = self.cameraAngle
+        let fieldOfViewAngle = self.xFov.toRadians()
 
-        self.movementHandler?(rotationAngle + CGFloat(self.cameraStartAngle), fieldOfViewAngle)
+        self.movementHandler?(rotationAngle - self.cameraStartAngle, fieldOfViewAngle)
 	}
 
 	// MARK: Gesture handling
@@ -438,7 +437,7 @@ private extension CTPanoramaView {
 			}
 
             self.prevLocation = location
-            self.reportMovement(self.cameraAngle, self.xFov.toRadians())
+            self.reportMovement()
 		}
 	}
 
@@ -450,7 +449,7 @@ private extension CTPanoramaView {
 		let zoom = CGFloat(pinchRec.scale)
 		switch pinchRec.state {
 		case .began:
-            self.pinchStartScale = cameraNode.camera!.fieldOfView
+            self.pinchStartScale = self.cameraNode.camera!.fieldOfView
 		case .changed:
             let fov = self.pinchStartScale / zoom
             if fov > self.minFoV && fov <= self.maxFoV {

@@ -86,12 +86,11 @@ public struct PanoramaViewer<ID: Equatable>: UIViewRepresentable {
     // MARK: - Functions
 
     public func makeUIView(context: Context) -> UIViewType {
-        let view = CTPanoramaView()
+        let view = CTPanoramaView(cameraStartAngle: self.initialCameraAngle)
         view.controlMethod = self.controlMethod
         view.backgroundColor = self.backgroundColor
         view.movementHandler = self.movementHandler
         view.tapHandler = self.tapHandler
-//        view.cameraStartAngle = self.initialCameraAngle + .pi
         return view
     }
 
