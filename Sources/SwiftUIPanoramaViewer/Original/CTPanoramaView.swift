@@ -9,6 +9,7 @@
 import UIKit
 import SceneKit
 import CoreMotion
+import SwiftUI
 import ImageIO
 import OSLog
 import SpriteKit
@@ -21,8 +22,8 @@ public enum CTPanoramaControlMethod: Int {
 
 public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
-    public typealias MovementHandler = ((_ rotationAngle: CGFloat, _ fieldOfViewAngle: CGFloat) -> Void)
-    public typealias TapHandler = ((CLLocationDirection) -> Void)
+    public typealias MovementHandler = ((_ rotationAngle: CircularAngle, _ fieldOfViewAngle: CGFloat) -> Void)
+    public typealias TapHandler = ((CircularAngle) -> Void)
 
 	public enum AnimateOption {
 		case none
@@ -35,15 +36,15 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
     public var tapHandler: TapHandler?
 
 	public var panSpeed = CGPoint(x: 0.4, y: 0.4)
-    public var cameraStartAngle: CGFloat
+    public var cameraStartAngle: CircularAngle
 
-	public var cameraAngle: CGFloat {
+	public var cameraAngle: CircularAngle {
 		let quaternion = self.cameraNode.orientation
 		// Convert quaternion to Euler angles (in radians)
 		let yaw = atan2(2 * (quaternion.y * quaternion.w - quaternion.x * quaternion.z),
 						1 - 2 * (quaternion.y * quaternion.y + quaternion.z * quaternion.z))
 
-		return CGFloat(-yaw)
+        return .radians(Double(-yaw))
 	}
 
 	public var minFoV: CGFloat = 40
@@ -126,8 +127,8 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
 	// MARK: Class lifecycle methods
 
-    public init(cameraStartAngle: CGFloat = 0) {
-        self.cameraStartAngle = cameraStartAngle
+    public init(cameraStartAngle: CircularAngle? = nil) {
+        self.cameraStartAngle = cameraStartAngle ?? .zero
         super.init(frame: .zero)
         self.commonInit()
     }
@@ -165,21 +166,21 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
 	public func resetCameraAngles() {
         self.yFov = 60
-        self.cameraNode.eulerAngles = SCNVector3Make(0, Float(self.cameraStartAngle) + .pi, 0)
+        self.cameraNode.eulerAngles = SCNVector3Make(0, Float(self.cameraStartAngle.radians) + .pi, 0)
         self.totalX = Float.zero
         self.totalY = Float.zero
         self.reportMovement()
 	}
 
-    public func transition(to image: UIImage, angle: Float, animation: AnimateOption = .fade(duration: 0.5), description: String? = nil, completion: (()->Void)? = nil) {
+    public func transition(to image: UIImage, angle: CircularAngle, animation: AnimateOption = .fade(duration: 0.5), description: String? = nil, completion: (()->Void)? = nil) {
         defer {
             self.image = image
         }
 
-        Logger.panoramaViewer.notice("Scene Rotation: \(angle) rad")
+        Logger.panoramaViewer.notice("Scene Rotation: \(angle)")
 
         let transitionEventTracker = DebugEventTracker(category: "Transition", name: "Transition to Image")
-        transitionEventTracker.trackBegin(message: "\(description ?? "") at angle \(angle) rad")
+        transitionEventTracker.trackBegin(message: "\(description ?? "") at angle \(angle)")
 
         let oldValue = self.geometryNode.geometry?.firstMaterial?.value(forKey: "newTexture")
         let newProperty = SCNMaterialProperty(contents: image)
@@ -190,7 +191,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
         material.setValue(oldValue, forKey: "oldTexture")
         material.setValue(newProperty, forKey: "newTexture")
         material.setValue(0.0, forKey: "blendFactor")
-        material.setValue(angle, forKey: "rotation")
+        material.setValue(angle.radians, forKey: "rotation")
 
         // Shader modifier for texture blending
         material.shaderModifiers = [
@@ -235,7 +236,7 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 	public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {      
 		guard let touchLocation = touches.first?.location(in: sceneView) else { return }
 
-        Logger.panoramaViewer.info("touch ended: \(touchLocation.debugDescription)")
+        Logger.panoramaViewer.notice("touch ended: \(touchLocation.debugDescription)")
         let tapIndicator = TapIndicator()
 		self.addSubview(tapIndicator)
 		tapIndicator.animateCircles(center: touchLocation)
@@ -244,11 +245,10 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
             // SceneKit angle relative to +X, in radians (−π ... π)
             let rawAngle = atan2(Double(localSphereCoordinates.z), Double(localSphereCoordinates.x))
 
-            // Keep result in [0, 2π)
-            let angleRad = rawAngle.normalizedRadians()
+            let angle = CircularAngle(radians: rawAngle)
 
-            Logger.panoramaViewer.notice("tap angle is: \(angleRad) rad")
-            self.tapHandler?(angleRad)
+            Logger.panoramaViewer.notice("tap angle is: \(angle)")
+            self.tapHandler?(angle)
         }
 	}
 
