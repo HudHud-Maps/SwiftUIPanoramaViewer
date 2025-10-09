@@ -53,16 +53,16 @@ public struct CircularAngle: Equatable, Comparable, Hashable {
         .init(radians: 0)
     }
 
+    public static var pi: Self {
+        .init(radians: .pi)
+    }
+
     public func adding(_ other: Self) -> Self {
         Self(radians: self.radians + other.radians)
     }
 
     public  func subtracting(_ other: Self) -> Self {
         Self(radians: self.radians - other.radians)
-    }
-
-    public func abs() -> Self {
-        Self(radians: Swift.abs(radiansValue))
     }
 
     public static func + (lhs: Self, rhs: Self) -> Self {
@@ -84,6 +84,15 @@ extension CircularAngle: CustomStringConvertible {
 
     public var description: String {
         "\(String(format: "%6.1f°", self.degrees)) (\(String(format: "%5.3f rad", self.radians)))"
+    }
+}
+
+public extension CircularAngle {
+
+    static func delta(between a: CircularAngle, and b: CircularAngle) -> CircularAngle {
+        let diff = abs(a.radians - b.radians)
+        let minimal = min(diff, 2 * .pi - diff)
+        return CircularAngle(radians: minimal)
     }
 }
 

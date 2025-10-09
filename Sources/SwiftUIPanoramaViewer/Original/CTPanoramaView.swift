@@ -236,7 +236,6 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 	public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {      
 		guard let touchLocation = touches.first?.location(in: sceneView) else { return }
 
-        Logger.panoramaViewer.notice("touch ended: \(touchLocation.debugDescription)")
         let tapIndicator = TapIndicator()
 		self.addSubview(tapIndicator)
 		tapIndicator.animateCircles(center: touchLocation)
@@ -244,11 +243,14 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
         if let localSphereCoordinates = self.sceneView.hitTest(touchLocation, options: nil).first?.localCoordinates {
             // SceneKit angle relative to +X, in radians (−π ... π)
             let rawAngle = atan2(Double(localSphereCoordinates.z), Double(localSphereCoordinates.x))
+            let tapAngle = CircularAngle(radians: rawAngle)// + self.cameraAngle
 
-            let angle = CircularAngle(radians: rawAngle)
+            let rotation: Double = (self.geometryNode.geometry?.firstMaterial?.value(forKey: "rotation") as? Double) ?? .zero
+            let imageRotation = CircularAngle(radians: rotation)
 
-            Logger.panoramaViewer.notice("tap angle is: \(angle)")
-            self.tapHandler?(angle)
+            let adjustedAngle = imageRotation - tapAngle
+
+            self.tapHandler?(adjustedAngle)
         }
 	}
 
@@ -382,7 +384,7 @@ private extension CTPanoramaView {
         let rotationAngle = self.cameraAngle
         let fieldOfViewAngle = self.xFov.toRadians()
 
-        self.movementHandler?(rotationAngle - self.cameraStartAngle, fieldOfViewAngle)
+        self.movementHandler?(rotationAngle, fieldOfViewAngle)
 	}
 
 	// MARK: Gesture handling
