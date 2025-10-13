@@ -243,14 +243,19 @@ public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
         if let localSphereCoordinates = self.sceneView.hitTest(touchLocation, options: nil).first?.localCoordinates {
             // SceneKit angle relative to +X, in radians (−π ... π)
             let rawAngle = atan2(Double(localSphereCoordinates.z), Double(localSphereCoordinates.x))
-            let tapAngle = CircularAngle(radians: rawAngle)// + self.cameraAngle
+            let tapAngle = CircularAngle(radians: rawAngle) - .degrees(90)
 
             let rotation: Double = (self.geometryNode.geometry?.firstMaterial?.value(forKey: "rotation") as? Double) ?? .zero
             let imageRotation = CircularAngle(radians: rotation)
 
-            let adjustedAngle = imageRotation - tapAngle
+            let cameraAngle = self.cameraAngle - .pi
 
-            self.tapHandler?(adjustedAngle)
+            let adjustedAngle = cameraAngle - tapAngle
+            Logger.panoramaViewer.info("     tapAngle: \(tapAngle)")
+            Logger.panoramaViewer.info("  cameraAngle: \(cameraAngle)")
+            Logger.panoramaViewer.info("adjustedAngle: \(adjustedAngle)")
+
+            self.tapHandler?(tapAngle)
         }
 	}
 
