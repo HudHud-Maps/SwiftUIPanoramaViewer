@@ -9,32 +9,21 @@
 import UIKit
 import SceneKit
 import CoreMotion
+import SwiftUI
 import ImageIO
+import OSLog
+import SpriteKit
 
-@MainActor
-@objc public protocol CTPanoramaCompass {
-	func updateUI(rotationAngle: CGFloat, fieldOfViewAngle: CGFloat)
-}
-
-@objc public enum CTPanoramaControlMethod: Int {
+public enum CTPanoramaControlMethod: Int {
 	case motion
 	case touch
 	case both
 }
 
-@objc public enum CTPanoramaType: Int {
-	case cylindrical
-	case spherical
-}
+public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
 
-@objc public enum CTNavigationDirection: Int, CaseIterable {
-	case north
-	case east
-	case south
-	case west
-}
-
-@objc public class CTPanoramaView: UIView, UIGestureRecognizerDelegate {
+    public typealias MovementHandler = ((_ rotationAngle: CircularAngle, _ fieldOfViewAngle: CGFloat) -> Void)
+    public typealias TapHandler = ((CircularAngle) -> Void)
 
 	public enum AnimateOption {
 		case none
@@ -43,49 +32,30 @@ import ImageIO
 
 	// MARK: Public properties
 
-	@objc public var compass: CTPanoramaCompass?
-	@objc public var movementHandler: ((_ rotationAngle: CGFloat, _ fieldOfViewAngle: CGFloat) -> Void)?
-    @objc public var tapHandler: ((Float) -> Void)?
+	public var movementHandler: MovementHandler?
+    public var tapHandler: TapHandler?
 
-	@objc public var panSpeed = CGPoint(x: 0.4, y: 0.4)
-	@objc public var startAngle: Float = 0
-	@objc public var rotationHandler: ((_ rotationKey: Float) -> Void)?
+	public var panSpeed = CGPoint(x: 0.4, y: 0.4)
+    public var cameraStartAngle: CircularAngle
 
-	@objc public var angleOffset: Float = 0 {
-		didSet {
-			geometryNode?.rotation = SCNQuaternion(0, 1, 0, angleOffset)
-		}
-	}
-
-	@objc public var cameraAngle: CGFloat {
+	public var cameraAngle: CircularAngle {
 		let quaternion = self.cameraNode.orientation
 		// Convert quaternion to Euler angles (in radians)
 		let yaw = atan2(2 * (quaternion.y * quaternion.w - quaternion.x * quaternion.z),
 						1 - 2 * (quaternion.y * quaternion.y + quaternion.z * quaternion.z))
 
-		return CGFloat(-yaw)
+        return .radians(Double(-yaw))
 	}
 
-	@objc public var minFoV: CGFloat = 40
-	@objc public var maxFoV: CGFloat = 100
+	public var minFoV: CGFloat = 40
+	public var maxFoV: CGFloat = 120
 
 	private(set) var image: UIImage?
-	private(set) var isTransitioningImage: Bool = false
 
-	@objc public var overlayView: UIView? {
+	public var controlMethod: CTPanoramaControlMethod = .touch {
 		didSet {
-			replace(overlayView: oldValue, with: overlayView)
-		}
-	}
-
-	@objc public var panoramaType: CTPanoramaType {
-		return (geometryNode?.geometry is SCNSphere) ? .spherical : .cylindrical
-	}
-
-	@objc public var controlMethod: CTPanoramaControlMethod = .touch {
-		didSet {
-			switchControlMethod(to: controlMethod)
-			resetCameraAngles();
+            self.switchControlMethod(to: self.controlMethod)
+            self.resetCameraAngles();
 		}
 	}
 
@@ -93,19 +63,19 @@ import ImageIO
 
 	public override var backgroundColor: UIColor? {
 		didSet {
-			sceneView.backgroundColor = backgroundColor
+            self.sceneView.backgroundColor = self.backgroundColor
 		}
 	}
 
 	// MARK: Private properties
 
+    private let rendererEventTracker = DebugEventTracker(category: "Renderer", name: "CTPanoramaView Lifecycle")
 	private let MaxPanGestureRotation: Float = GLKMathDegreesToRadians(360)
 	private let radius: CGFloat = 10
 	private let sceneView = SCNView()
 	private let scene = SCNScene()
 	private let motionManager = CMMotionManager()
-	private var geometryNode: SCNNode?
-	private var temporaryGeometryNodes: [SCNNode] = []
+	private var geometryNode: Node!
 	private var prevLocation = CGPoint.zero
 	private var prevRotation = CGFloat.zero
 	private var prevBounds = CGRect.zero
@@ -116,14 +86,14 @@ import ImageIO
 
 	private var motionPaused = false
 
-	private lazy var cameraNode: SCNNode = {
-		let node = SCNNode()
+	private lazy var cameraNode: Node = {
+        let node = Node(role: .camera)
 		let camera = SCNCamera()
 		node.camera = camera
 		return node
 	}()
 
-	private lazy var opQueue: OperationQueue = {
+	private lazy var motionQueue: OperationQueue = {
 		let queue = OperationQueue()
 		queue.qualityOfService = .userInteractive
 		return queue
@@ -133,49 +103,45 @@ import ImageIO
 		return tan(self.yFov/2 * .pi / 180.0) * 2 * self.radius
 	}()
 
-	private var startScale: CGFloat = 0.0
+	private var pinchStartScale: CGFloat = 0.0
 
 	private var xFov: CGFloat {
-		return yFov * self.bounds.width / self.bounds.height
+        return self.yFov * self.bounds.width / self.bounds.height
 	}
 
 	private var yFov: CGFloat {
 		get {
-			return cameraNode.camera?.fieldOfView ?? 0
+            return self.cameraNode.camera?.fieldOfView ?? 0
 		}
 		set {
-			cameraNode.camera?.fieldOfView = newValue
+            self.cameraNode.camera?.fieldOfView = newValue
 		}
 	}
     
-    private var horizontalFieldOfView: CGFloat {
-        let verticalFieldOfViewInRadians = (cameraNode.camera?.fieldOfView ?? 0) * .pi / 180
+    private var horizontalFieldOfView: Float {
+        let verticalFieldOfViewInRadians = (self.cameraNode.camera?.fieldOfView ?? 0) * .pi / 180
         let aspectRatio = bounds.width / bounds.height
         let horizontalFieldOfViewInRadians = 2 * atan(tan(verticalFieldOfViewInRadians / 2) * aspectRatio)
-        return horizontalFieldOfViewInRadians * 180 / .pi
+        return Float(horizontalFieldOfViewInRadians * 180 / .pi)
     }
 
 	// MARK: Class lifecycle methods
 
-	public required init?(coder aDecoder: NSCoder) {
-		super.init(coder: aDecoder)
-		commonInit()
-	}
-
-	public override init(frame: CGRect) {
-		super.init(frame: frame)
-		commonInit()
-	}
-
-	public convenience init(frame: CGRect, image: UIImage) {
-		self.init(frame: frame)
-		// Force Swift to call the property observer by calling the setter from a non-init context
-		({ self.image = image })()
-	}
+    public init(cameraStartAngle: CircularAngle? = nil) {
+        self.cameraStartAngle = cameraStartAngle ?? .zero
+        super.init(frame: .zero)
+        self.commonInit()
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
 	deinit {
-		if motionManager.isDeviceMotionActive {
-			motionManager.stopDeviceMotionUpdates()
+        self.rendererEventTracker.trackEnd(message: "deinit")
+
+        if self.motionManager.isDeviceMotionActive {
+            self.motionManager.stopDeviceMotionUpdates()
 		}
 	}
 
@@ -183,9 +149,8 @@ import ImageIO
 
 	public override func layoutSubviews() {
 		super.layoutSubviews()
-		if bounds.size.width != prevBounds.size.width || bounds.size.height != prevBounds.size.height {
-			sceneView.setNeedsDisplay()
-			reportMovement(CGFloat(-cameraNode.eulerAngles.y), xFov.toRadians(), callHandler: false)
+        if self.bounds.size.width != self.prevBounds.size.width || self.bounds.size.height != self.prevBounds.size.height {
+            self.sceneView.setNeedsDisplay()
 		}
 	}
 
@@ -200,64 +165,109 @@ import ImageIO
 	// MARK: Public methods
 
 	public func resetCameraAngles() {
-		yFov = maxFoV
-		cameraNode.eulerAngles = SCNVector3Make(0, startAngle, 0)
-		totalX = Float.zero
-		totalY = Float.zero
-		self.reportMovement(CGFloat(startAngle), xFov.toRadians(), callHandler: false)
+        self.yFov = 60
+        self.cameraNode.eulerAngles = SCNVector3Make(0, Float(self.cameraStartAngle.radians) + .pi, 0)
+        self.totalX = Float.zero
+        self.totalY = Float.zero
+        self.reportMovement()
 	}
 
-	public func transition(to image: UIImage, animation: AnimateOption = .fade(duration: 0.5), completion: (()->Void)? = nil) {
-		self.isTransitioningImage = true
-        self.temporaryGeometryNodes.last?.removeAllActions()
-		self.geometryNode?.removeAllActions()
+    public func transition(to image: UIImage, angle: CircularAngle, animation: AnimateOption = .fade(duration: 0.5), description: String? = nil, completion: (()->Void)? = nil) {
+        defer {
+            self.image = image
+        }
 
-		let newNode = self.createGeometryNode(for: image)
-		self.scene.rootNode.addChildNode(newNode)
-        self.temporaryGeometryNodes.insert(newNode, at: 0)
+        Logger.panoramaViewer.notice("Scene Rotation: \(angle)")
 
-		DispatchQueue.main.async {
-			switch animation {
-			case .none:
-				self.geometryNode?.removeFromParentNode()
-				self.geometryNode = newNode
-                _ = self.temporaryGeometryNodes.popLast()
-				self.image = image
-				self.isTransitioningImage = false
-				completion?()
-			case .fade(let duration):
-				self.geometryNode?.runAction(SCNAction.fadeOut(duration: duration))
-				newNode.runAction(SCNAction.fadeIn(duration: duration)) {
-					self.geometryNode?.removeFromParentNode()
-					self.geometryNode = newNode
-                    _ = self.temporaryGeometryNodes.popLast()
-					DispatchQueue.main.async {
-						self.image = image
-						self.isTransitioningImage = false
-						completion?()
-					}
-				}
-			}
-		}
+        let transitionEventTracker = DebugEventTracker(category: "Transition", name: "Transition to Image")
+        transitionEventTracker.trackBegin(message: "\(description ?? "") at angle \(angle)")
+
+        let oldValue = self.geometryNode.geometry?.firstMaterial?.value(forKey: "newTexture")
+        let newProperty = SCNMaterialProperty(contents: image)
+
+        let material = SCNMaterial()
+        material.isDoubleSided = false
+        material.cullMode = .front
+        material.setValue(oldValue, forKey: "oldTexture")
+        material.setValue(newProperty, forKey: "newTexture")
+        material.setValue(0.0, forKey: "blendFactor")
+        material.setValue(angle.radians, forKey: "rotation")
+
+        // Shader modifier for texture blending
+        material.shaderModifiers = [
+            .fragment: """
+            uniform sampler2D oldTexture;
+            uniform sampler2D newTexture;
+            uniform float blendFactor;
+            uniform float rotation; // in radians
+
+            vec2 flippedTexcoord = vec2(1.0 - _surface.diffuseTexcoord.x, _surface.diffuseTexcoord.y);
+            
+            // Adjust texture coordinate for horizontal rotation
+            float u = fract(flippedTexcoord.x + rotation / (2.0 * 3.1415926)); // Normalize radians to [0,1)
+            vec2 rotatedTexcoord = vec2(u, flippedTexcoord.y);
+
+            vec4 oldColor = texture2D(oldTexture, rotatedTexcoord);
+            vec4 newColor = texture2D(newTexture, rotatedTexcoord);
+            _output.color = mix(oldColor, newColor, blendFactor);
+            """
+        ]
+        self.geometryNode.geometry?.firstMaterial = material
+
+        // Animate the blend
+        SCNTransaction.begin()
+        SCNTransaction.completionBlock = {
+            transitionEventTracker.trackEnd(message: description)
+            self.geometryNode.accessibilityLabel = description
+            self.reportMovement()
+        }
+
+        switch animation {
+        case .none:
+            SCNTransaction.disableActions = true
+        case .fade(let duration):
+            SCNTransaction.animationDuration = duration
+        }
+
+        material.setValue(1.0, forKey: "blendFactor")
+        SCNTransaction.commit()
 	}
 
-	public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+	public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {      
 		guard let touchLocation = touches.first?.location(in: sceneView) else { return }
 
-		print(touchLocation)
         let tapIndicator = TapIndicator()
 		self.addSubview(tapIndicator)
 		tapIndicator.animateCircles(center: touchLocation)
 
-        if let localSphereCoordinates = sceneView.hitTest(
-            touchLocation, options: nil
-        ).first?.localCoordinates {
-            let widthPercentage = 0.5 + (atan2(localSphereCoordinates.z, localSphereCoordinates.x) / (2 * .pi))
-            let angle = ((widthPercentage * 360) + 90).truncatingRemainder(dividingBy: 360) // the image starts before 90 degrees, so we add it back
-            print("angle is: \(angle)")
-            tapHandler?(Float(angle))
+        if let localSphereCoordinates = self.sceneView.hitTest(touchLocation, options: nil).first?.localCoordinates {
+            // SceneKit angle relative to +X, in radians (−π ... π)
+            let rawAngle = atan2(Double(localSphereCoordinates.z), Double(localSphereCoordinates.x))
+            let tapAngle = CircularAngle(radians: rawAngle) - .degrees(90)
+
+            let rotation: Double = (self.geometryNode.geometry?.firstMaterial?.value(forKey: "rotation") as? Double) ?? .zero
+            let imageRotation = CircularAngle(radians: rotation)
+
+            let cameraAngle = self.cameraAngle - .pi
+
+            let adjustedAngle = cameraAngle - tapAngle
+            Logger.panoramaViewer.info("     tapAngle: \(tapAngle)")
+            Logger.panoramaViewer.info("  cameraAngle: \(cameraAngle)")
+            Logger.panoramaViewer.info("adjustedAngle: \(adjustedAngle)")
+
+            self.tapHandler?(tapAngle)
         }
 	}
+
+    public func cleanup() {
+        self.scene.rootNode.enumerateChildNodes { node, _ in
+            node.removeAllAnimations()
+            node.removeAllActions()
+            node.removeFromParentNode()
+        }
+
+        self.sceneView.scene = nil
+    }
 }
 
 // MARK: - Private
@@ -265,210 +275,142 @@ import ImageIO
 private extension CTPanoramaView {
 
 	func commonInit() {
-		add(view: sceneView)
+        self.rendererEventTracker.trackBegin(message: "init")
 
-		scene.rootNode.addChildNode(cameraNode)
+        self.add(view: self.sceneView)
 
-		sceneView.scene = scene
-		sceneView.backgroundColor = self.backgroundColor
+        self.scene.rootNode.addChildNode(self.cameraNode)
+        self.sceneView.scene = self.scene
+        self.sceneView.backgroundColor = self.backgroundColor
+        self.sceneView.accessibilityTraits = .image
 
-		switchControlMethod(to: controlMethod)
+        let sphere = SCNSphere(radius: self.radius)
+        sphere.segmentCount = 360
+        self.geometryNode = Node(role: .sphere)
+        self.geometryNode.geometry = sphere
+        self.scene.rootNode.addChildNode(self.geometryNode)
+
+        let image = UIColor.black.render(in: CGSize(width: 100, height: 50))
+        let newProperty = SCNMaterialProperty(contents: image)
+
+        let material = SCNMaterial()
+        material.setValue(newProperty, forKey: "newTexture")
+        sphere.firstMaterial = material
+
+        self.switchControlMethod(to: self.controlMethod)
 	}
 
 	// MARK: Configuration helper methods
 
-	func createGeometryNode(for image: UIImage) -> SCNNode {
-		let material = SCNMaterial()
-		material.diffuse.contents = image
-		material.diffuse.mipFilter = .nearest
-		material.diffuse.magnificationFilter = .nearest
-		material.diffuse.contentsTransform = SCNMatrix4MakeScale(-1, 1, 1)
-		material.diffuse.wrapS = .repeat
-		material.cullMode = .front
-
-		if image.panoramaType == .spherical {
-			let sphere = SCNSphere(radius: radius)
-			sphere.segmentCount = 360
-			sphere.firstMaterial = material
-
-			let sphereNode = SCNNode()
-			sphereNode.geometry = sphere
-			sphereNode.rotation = SCNQuaternion(0, 1, 0, angleOffset)
-			return sphereNode
-		} else {
-			let tube = SCNTube(innerRadius: radius, outerRadius: radius, height: fovHeight)
-			tube.heightSegmentCount = 50
-			tube.radialSegmentCount = 360
-			tube.firstMaterial = material
-
-			let tubeNode = SCNNode()
-			tubeNode.geometry = tube
-			tubeNode.rotation  = SCNQuaternion(0, 1, 0, angleOffset)
-			return tubeNode
-		}
-	}
-
-	func replace(overlayView: UIView?, with newOverlayView: UIView?) {
-		overlayView?.removeFromSuperview()
-		guard let newOverlayView = newOverlayView else {return}
-		add(view: newOverlayView)
-	}
-
 	func startMotionUpdates(){
-		guard motionManager.isDeviceMotionAvailable else {return}
-		motionManager.deviceMotionUpdateInterval = 0.015
+        guard self.motionManager.isDeviceMotionAvailable else {return}
+        self.motionManager.deviceMotionUpdateInterval = 0.015
 
-		motionPaused = false
-		motionManager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: opQueue,
-											   withHandler: { [weak self] (motionData, error) in
+        self.motionPaused = false
+        self.motionManager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: self.motionQueue, withHandler: { [weak self] motionData, error in
 			guard let panoramaView = self else {return}
 			guard !panoramaView.motionPaused else {return}
 
 			guard (panoramaView.controlMethod == .motion || panoramaView.controlMethod == .both) else {return}
 
 			guard let motionData = motionData else {
-				print("\(String(describing: error?.localizedDescription))")
+                Logger.panoramaViewer.error("\(String(describing: error?.localizedDescription))")
 				panoramaView.motionManager.stopDeviceMotionUpdates()
 				return
 			}
 
+            DispatchQueue.main.async {
+                // Use quaternions when in spherical mode to prevent gimbal lock
+                var orientation = motionData.orientation()
 
-			DispatchQueue.main.async {
-				if panoramaView.panoramaType == .cylindrical {
+                // Represent the orientation as a GLKQuaternion
+                if(panoramaView.controlMethod == .both){
 
-					let rotationMatrix = motionData.attitude.rotationMatrix
-					var userHeading = .pi - atan2(rotationMatrix.m32, rotationMatrix.m31)
-					userHeading += .pi/2
+                    // same code as pan rotation
+                    // but with our total accumulated
+                    // movements
 
-					var startAngle = panoramaView.startAngle
+                    var glQuaternion = GLKQuaternionMake(orientation.x, orientation.y, orientation.z, orientation.w)
 
-					if (panoramaView.controlMethod == .both) {
-						startAngle += panoramaView.totalY
-					}
-					// Prevent vertical movement in a cylindrical panorama
-					panoramaView.cameraNode.eulerAngles = SCNVector3Make(0, startAngle + Float(-userHeading), 0)
+                    let xMultiplier = GLKQuaternionMakeWithAngleAndAxis(panoramaView.totalX, 1, 0, 0)
+                    glQuaternion = GLKQuaternionMultiply(glQuaternion, xMultiplier)
 
-				} else {
-					// Use quaternions when in spherical mode to prevent gimbal lock
+                    let yMultiplier = GLKQuaternionMakeWithAngleAndAxis(panoramaView.totalY, 0, 1, 0)
+                    glQuaternion = GLKQuaternionMultiply(yMultiplier, glQuaternion)
 
-					var orientation = motionData.orientation()
+                    orientation = SCNQuaternion(x: glQuaternion.x, y: glQuaternion.y, z: glQuaternion.z, w: glQuaternion.w)
 
-					// Represent the orientation as a GLKQuaternion
-					if(panoramaView.controlMethod == .both){
-
-						// same code as pan rotation
-						// but with our total accumulated
-						// movements
-
-						var glQuaternion = GLKQuaternionMake(orientation.x, orientation.y, orientation.z, orientation.w)
-
-						let xMultiplier = GLKQuaternionMakeWithAngleAndAxis(panoramaView.totalX, 1, 0, 0)
-						glQuaternion = GLKQuaternionMultiply(glQuaternion, xMultiplier)
-
-						let yMultiplier = GLKQuaternionMakeWithAngleAndAxis(panoramaView.totalY, 0, 1, 0)
-						glQuaternion = GLKQuaternionMultiply(yMultiplier, glQuaternion)
-
-						orientation = SCNQuaternion(x: glQuaternion.x, y: glQuaternion.y, z: glQuaternion.z, w: glQuaternion.w)
-
-					}
-
-					panoramaView.cameraNode.orientation = orientation
-
-				}
-
-				panoramaView.reportMovement(CGFloat(-panoramaView.cameraNode.eulerAngles.y), panoramaView.xFov.toRadians())
+                }
+                panoramaView.cameraNode.orientation = orientation
+				panoramaView.reportMovement()
 			}
 		})
 	}
 
 	func switchControlMethod(to method: CTPanoramaControlMethod) {
-		sceneView.gestureRecognizers?.removeAll()
+        self.sceneView.gestureRecognizers?.removeAll()
 
 		if method == .touch {
 			let panGestureRec = UIPanGestureRecognizer(target: self, action: #selector(handlePan(panRec:)))
-			sceneView.addGestureRecognizer(panGestureRec)
+            self.sceneView.addGestureRecognizer(panGestureRec)
 
 			let pinchRec = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(pinchRec:)))
-			sceneView.addGestureRecognizer(pinchRec)
+            self.sceneView.addGestureRecognizer(pinchRec)
 
 			let rotateRec = UIRotationGestureRecognizer(target: self, action: #selector(handleRotate(rotRec:)))
-			sceneView.addGestureRecognizer(rotateRec)
+            self.sceneView.addGestureRecognizer(rotateRec)
 
 			pinchRec.delegate = self
 			rotateRec.delegate = self
 
-			if motionManager.isDeviceMotionActive {
-				motionManager.stopDeviceMotionUpdates()
+            if self.motionManager.isDeviceMotionActive {
+                self.motionManager.stopDeviceMotionUpdates()
 			}
-
 		}
 		else {
 			if method == .both {
 				let panGestureRec = UIPanGestureRecognizer(target: self, action: #selector(handlePan(panRec:)))
-				sceneView.addGestureRecognizer(panGestureRec)
+                self.sceneView.addGestureRecognizer(panGestureRec)
 
 				let pinchRec = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(pinchRec:)))
-				sceneView.addGestureRecognizer(pinchRec)
+                self.sceneView.addGestureRecognizer(pinchRec)
 
 				let rotateRec = UIRotationGestureRecognizer(target: self, action: #selector(handleRotate(rotRec:)))
-				sceneView.addGestureRecognizer(rotateRec)
+                self.sceneView.addGestureRecognizer(rotateRec)
 
 				pinchRec.delegate = self
 				rotateRec.delegate = self
 			}
-
-			startMotionUpdates()
-
+            self.startMotionUpdates()
 		}
 	}
 
-	func reportMovement(_ rotationAngle: CGFloat, _ fieldOfViewAngle: CGFloat, callHandler: Bool = true) {
-		compass?.updateUI(rotationAngle: rotationAngle, fieldOfViewAngle: fieldOfViewAngle)
-		if callHandler {
-			movementHandler?(rotationAngle, fieldOfViewAngle)
-		}
+	func reportMovement() {
+        let rotationAngle = self.cameraAngle
+        let fieldOfViewAngle = self.xFov.toRadians()
 
-		if let rotationHandler = rotationHandler {
-			// HACK: Create a unique "key" value for rotation to key events off of.
-
-			let a = rotationAngle.toDegrees()
-			let b = (cameraNode.rotation.y * cameraNode.orientation.y).toDegrees()
-			//let resolution = Float(5.0)
-			let s = "\(Int(a * 0.50))\(Int(b * 0.70))"
-			let k = Int(s)!
-			rotationHandler(Float(rotationAngle))
-			PanoramaManager.lastRotationKey = k
-		}
+        self.movementHandler?(rotationAngle, fieldOfViewAngle)
 	}
 
 	// MARK: Gesture handling
 
 	@objc func handlePan(panRec: UIPanGestureRecognizer) {
 		if panRec.state == .began {
-			prevLocation = CGPoint.zero
-
+            self.prevLocation = CGPoint.zero
 		} else if panRec.state == .changed {
-
-			var modifiedPanSpeed = panSpeed
-
-			if (panoramaType == .cylindrical) {
-				modifiedPanSpeed.y = 0 // Prevent vertical movement in a cylindrical panorama
-			}
-
-			let orientation = cameraNode.orientation
-			let location = panRec.translation(in: sceneView)
+            let orientation = self.cameraNode.orientation
+            let location = panRec.translation(in: self.sceneView)
 
 			let translationDelta = CGPoint(
-				x: (location.x - prevLocation.x) * modifiedPanSpeed.x,
-				y: (location.y - prevLocation.y) * modifiedPanSpeed.y
+                x: (location.x - self.prevLocation.x) * self.panSpeed.x,
+                y: (location.y - self.prevLocation.y) * self.panSpeed.y
 			)
 
 			// Accumulate these if wheb using .both method so that we can apply the rotations
 			// to the sensor data and smoothly move with both touch and motion controls at the same time
 
 			// If both, just accumulate, our sensor callback will handle it
-			if (controlMethod == .both) {
-
+            if (self.controlMethod == .both) {
 				// Use the pan translation along the x axis to adjust the camera's rotation about the y axis (side to side navigation).
 				let yScalar = Float(translationDelta.x / self.bounds.size.width)
 				let yRadians = yScalar * MaxPanGestureRotation
@@ -476,10 +418,9 @@ private extension CTPanoramaView {
 				let xScalar = Float(translationDelta.y / self.bounds.size.height)
 				let xRadians = xScalar * MaxPanGestureRotation
 
-				totalX += xRadians
-				totalY += yRadians
+                self.totalX += xRadians
+                self.totalY += yRadians
 			} else { // Otherwise, do the math here since we have no sensor
-
 				// Use the pan translation along the x axis to adjust the camera's rotation about the y axis (side to side navigation).
 				let yScalar = Float(translationDelta.x / self.bounds.size.width)
 				let yRadians = yScalar * MaxPanGestureRotation
@@ -499,12 +440,11 @@ private extension CTPanoramaView {
 				let yMultiplier = GLKQuaternionMakeWithAngleAndAxis(yRadians, 0, 1, 0)
 				glQuaternion = GLKQuaternionMultiply(yMultiplier, glQuaternion)
 
-				cameraNode.orientation = SCNQuaternion(x: glQuaternion.x, y: glQuaternion.y, z: glQuaternion.z, w: glQuaternion.w)
-
+                self.cameraNode.orientation = SCNQuaternion(x: glQuaternion.x, y: glQuaternion.y, z: glQuaternion.z, w: glQuaternion.w)
 			}
 
-			prevLocation = location
-			reportMovement(self.cameraAngle, xFov.toRadians())
+            self.prevLocation = location
+            self.reportMovement()
 		}
 	}
 
@@ -516,11 +456,11 @@ private extension CTPanoramaView {
 		let zoom = CGFloat(pinchRec.scale)
 		switch pinchRec.state {
 		case .began:
-			startScale = cameraNode.camera!.fieldOfView
+            self.pinchStartScale = self.cameraNode.camera!.fieldOfView
 		case .changed:
-			let fov = startScale / zoom
-			if fov > minFoV && fov <= maxFoV {
-				cameraNode.camera!.fieldOfView = fov
+            let fov = self.pinchStartScale / zoom
+            if fov > self.minFoV && fov <= self.maxFoV {
+                self.cameraNode.camera!.fieldOfView = fov
 			}
 		default:
 			break
@@ -528,144 +468,30 @@ private extension CTPanoramaView {
 	}
 
 	@objc func handleRotate(rotRec: UIRotationGestureRecognizer) {
-
-		// no rotation for cylindrical
-		if panoramaType == .cylindrical{
-			return
-		}
-
 		if rotRec.state == .began {
-			prevRotation = CGFloat.zero
+            self.prevRotation = CGFloat.zero
 
-			if (controlMethod == .both) {
-				motionPaused = true
+            if (self.controlMethod == .both) {
+                self.motionPaused = true
 			}
-
 		} else if rotRec.state == .changed {
-
-			let orientation = cameraNode.orientation
+            let orientation = self.cameraNode.orientation
 			let rotation = rotRec.rotation
 
 			let zRadians = rotation - prevRotation
 
-			// use a Quaternion instead of eluer angles
-			// so we can switch from sensor to finger rotation
-			// smoothly
-
+			// use a Quaternion instead of eluer angles so we
+            // can switch from sensor to finger rotation smoothly
 			var glQuaternion = GLKQuaternionMake(orientation.x, orientation.y, orientation.z, orientation.w)
 
 			let zMultiplier = GLKQuaternionMakeWithAngleAndAxis(Float(zRadians), 0, 0, 1)
 			glQuaternion = GLKQuaternionMultiply(glQuaternion, zMultiplier)
 
-			cameraNode.orientation = SCNQuaternion(x: glQuaternion.x, y: glQuaternion.y, z: glQuaternion.z, w: glQuaternion.w)
-
-			prevRotation = rotation
-
+            self.cameraNode.orientation = SCNQuaternion(x: glQuaternion.x, y: glQuaternion.y, z: glQuaternion.z, w: glQuaternion.w)
+            self.prevRotation = rotation
 		}
 		else {
-			motionPaused = false
+            self.motionPaused = false
 		}
 	}
 }
-
-@MainActor
-private extension CMDeviceMotion {
-
-	func orientation() -> SCNVector4 {
-
-		let attitude = self.attitude.quaternion
-		let attitudeQuanternion = GLKQuaternion(quanternion: attitude)
-
-		let result: SCNVector4
-
-		switch UIApplication.shared.statusBarOrientation {
-
-		case .landscapeRight:
-			let cq1 = GLKQuaternionMakeWithAngleAndAxis(.pi/2, 0, 1, 0)
-			let cq2 = GLKQuaternionMakeWithAngleAndAxis(-(.pi/2), 1, 0, 0)
-			var quanternionMultiplier = GLKQuaternionMultiply(cq1, attitudeQuanternion)
-			quanternionMultiplier = GLKQuaternionMultiply(cq2, quanternionMultiplier)
-
-			result = quanternionMultiplier.vector(for: .landscapeRight)
-
-		case .landscapeLeft:
-			let cq1 = GLKQuaternionMakeWithAngleAndAxis(-(.pi/2), 0, 1, 0)
-			let cq2 = GLKQuaternionMakeWithAngleAndAxis(-(.pi/2), 1, 0, 0)
-			var quanternionMultiplier = GLKQuaternionMultiply(cq1, attitudeQuanternion)
-			quanternionMultiplier = GLKQuaternionMultiply(cq2, quanternionMultiplier)
-
-			result = quanternionMultiplier.vector(for: .landscapeLeft)
-
-		case .portraitUpsideDown:
-			let cq1 = GLKQuaternionMakeWithAngleAndAxis(-(.pi/2), 1, 0, 0)
-			let cq2 = GLKQuaternionMakeWithAngleAndAxis(.pi, 0, 0, 1)
-			var quanternionMultiplier = GLKQuaternionMultiply(cq1, attitudeQuanternion)
-			quanternionMultiplier = GLKQuaternionMultiply(cq2, quanternionMultiplier)
-
-			result = quanternionMultiplier.vector(for: .portraitUpsideDown)
-
-		default:
-			let clockwiseQuanternion = GLKQuaternionMakeWithAngleAndAxis(-(.pi/2), 1, 0, 0)
-			let quanternionMultiplier = GLKQuaternionMultiply(clockwiseQuanternion, attitudeQuanternion)
-
-			result = quanternionMultiplier.vector(for: .portrait)
-		}
-		return result
-	}
-}
-
-private extension UIImage {
-
-	var panoramaType: CTPanoramaType {
-		if self.size.width / self.size.height == 2 {
-			return .spherical
-		}
-		return .cylindrical
-	}
-}
-
-private extension UIView {
-	func add(view: UIView) {
-		view.translatesAutoresizingMaskIntoConstraints = false
-		addSubview(view)
-		let views = ["view": view]
-		let hConstraints = NSLayoutConstraint.constraints(withVisualFormat: "|[view]|", options: [], metrics: nil, views: views)
-		let vConstraints = NSLayoutConstraint.constraints(withVisualFormat: "V:|[view]|", options: [], metrics: nil, views: views)
-		self.addConstraints(hConstraints)
-		self.addConstraints(vConstraints)
-	}
-}
-
-private extension FloatingPoint {
-	func toDegrees() -> Self {
-		return self * 180 / .pi
-	}
-
-	func toRadians() -> Self {
-		return self * .pi / 180
-	}
-}
-
-private extension GLKQuaternion {
-	init(quanternion: CMQuaternion) {
-		self.init(q: (Float(quanternion.x), Float(quanternion.y), Float(quanternion.z), Float(quanternion.w)))
-	}
-
-	func vector(for orientation: UIInterfaceOrientation) -> SCNVector4 {
-		switch orientation {
-		case .landscapeRight:
-			return SCNVector4(x: -self.y, y: self.x, z: self.z, w: self.w)
-
-		case .landscapeLeft:
-			return SCNVector4(x: self.y, y: -self.x, z: self.z, w: self.w)
-
-		case .portraitUpsideDown:
-			return SCNVector4(x: -self.x, y: -self.y, z: self.z, w: self.w)
-
-		default:
-			return SCNVector4(x: self.x, y: self.y, z: self.z, w: self.w)
-		}
-	}
-}
-
-extension CMMotionManager: @retroactive @unchecked Sendable {}

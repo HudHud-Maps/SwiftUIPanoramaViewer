@@ -8,15 +8,6 @@
 
 import UIKit
 
-extension UIView {
-
-    static func forAutolayout() -> Self {
-        let view = Self()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }
-}
-
 final class CircleView: UIView {
 
     override func layoutSubviews() {
